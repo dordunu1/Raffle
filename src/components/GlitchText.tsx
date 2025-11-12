@@ -31,9 +31,16 @@ const GlitchText: React.FC<GlitchTextProps> = ({
   const [revealedIndices, setRevealedIndices] = useState<Set<number>>(new Set());
   const revealedIndicesRef = useRef<Set<number>>(new Set());
   const restartTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const revealStartTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Function to start the animation
   const startAnimation = useCallback(() => {
+    // Clear any existing reveal start timer
+    if (revealStartTimerRef.current) {
+      clearTimeout(revealStartTimerRef.current);
+      revealStartTimerRef.current = null;
+    }
+
     const scrambled = text.split('').map(() => getRandomChar()).join('');
     setDisplayText(scrambled);
     setRevealedIndices(new Set());
@@ -41,8 +48,9 @@ const GlitchText: React.FC<GlitchTextProps> = ({
     setIsRevealing(false);
     
     // Start revealing after a brief delay
-    setTimeout(() => {
+    revealStartTimerRef.current = setTimeout(() => {
       setIsRevealing(true);
+      revealStartTimerRef.current = null;
     }, 300);
   }, [text]);
 
@@ -51,8 +59,12 @@ const GlitchText: React.FC<GlitchTextProps> = ({
     startAnimation();
     
     return () => {
+      // Clean up all timers on unmount
       if (restartTimerRef.current) {
         clearTimeout(restartTimerRef.current);
+      }
+      if (revealStartTimerRef.current) {
+        clearTimeout(revealStartTimerRef.current);
       }
     };
   }, [startAnimation]);
@@ -116,17 +128,19 @@ const GlitchText: React.FC<GlitchTextProps> = ({
           }
         }
         
-        // If all characters are revealed, stop the interval
-        if (newSet.size === text.length) {
-          setIsRevealing(false);
-        }
-        
         return newSet;
       });
     }, revealSpeed);
 
     return () => clearInterval(revealInterval);
   }, [isRevealing, text, revealSpeed]);
+
+  // Stop revealing when all characters are revealed (moved outside updater function)
+  useEffect(() => {
+    if (isRevealing && revealedIndices.size === text.length && text.length > 0) {
+      setIsRevealing(false);
+    }
+  }, [isRevealing, revealedIndices.size, text.length]);
 
   // Update display text when revealed indices change
   useEffect(() => {
@@ -154,7 +168,7 @@ const GlitchText: React.FC<GlitchTextProps> = ({
         
         return (
           <span
-            key={`${index}-${currentChar}-${isRevealed}`}
+            key={index}
             style={{
               display: 'inline-block',
               opacity: isRevealed ? 1 : 0.8,
