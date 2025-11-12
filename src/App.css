@@ -1,0 +1,629 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-orange-50;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+      'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer utilities {
+  .glass-effect {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    box-shadow: 
+      inset 0 1px 0 rgba(255, 255, 255, 0.8),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.1),
+      0 20px 40px rgba(0, 0, 0, 0.1),
+      0 8px 16px rgba(0, 0, 0, 0.08);
+  }
+  
+  .glass-neumorphic {
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: 
+      inset 4px 4px 8px rgba(255, 255, 255, 0.8),
+      inset -4px -4px 8px rgba(0, 0, 0, 0.1),
+      8px 8px 16px rgba(0, 0, 0, 0.1);
+  }
+
+  .scrollbar-hide {
+    /* Hide scrollbar for Chrome, Safari and Opera */
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;  /* Chrome, Safari and Opera */
+  }
+}
+
+.app {
+  min-height: 100vh;
+  font-family: system-ui, -apple-system, sans-serif;
+  background-color: #000;
+  color: white;
+}
+
+/* FHEVM Header */
+.header {
+  background-color: #ffd208;
+  padding: 1.5rem 0;
+  border-bottom: 1px solid #000;
+  z-index: 999;
+}
+
+.header-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 2rem;
+  text-align: center;
+}
+
+.app-title {
+  color: #000;
+  font-size: 2rem;
+  font-weight: bold;
+  margin: 0;
+}
+
+/* Main Content */
+.main-content {
+  background-color: #000;
+  min-height: calc(100vh - 120px);
+  padding: 2rem 0;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+
+.main-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  margin-top: 2rem;
+}
+
+.section {
+  background-color: #1a1a1a;
+  margin-bottom: 2rem;
+  border-radius: 16px;
+  border: 1px solid #333;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.section-header {
+  background-color: #2a2a2a;
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid #333;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.section-header h2 {
+  color: #ffd208;
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.subtitle {
+  color: #888;
+  font-size: 0.9rem;
+  margin: 0.5rem 0 0 0;
+  font-weight: 400;
+}
+
+.status-badge {
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status-badge[data-status="ready"] {
+  background-color: #4caf50;
+  color: white;
+}
+
+.status-badge[data-status="loading"] {
+  background-color: #ff9800;
+  color: white;
+}
+
+.status-badge[data-status="error"] {
+  background-color: #f44336;
+  color: white;
+}
+
+.status-badge[data-status="idle"] {
+  background-color: #666;
+  color: white;
+}
+
+.section-content {
+  padding: 2rem;
+}
+
+.section-content p {
+  color: #e0e0e0;
+  line-height: 1.6;
+  margin-bottom: 0.5rem;
+}
+
+.connection-prompt {
+  text-align: center;
+  padding: 2rem;
+}
+
+.connection-info {
+  display: grid;
+  gap: 1rem;
+}
+
+.info-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  background-color: #000;
+  border-radius: 8px;
+  border: 1px solid #333;
+}
+
+.label {
+  color: #888;
+  font-weight: 500;
+}
+
+.value, .address, .contract {
+  color: #e0e0e0;
+  font-family: monospace;
+  font-size: 0.9rem;
+}
+
+.address, .contract {
+  word-break: break-all;
+  max-width: 300px;
+  text-align: right;
+}
+
+.demo-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.handle-display, .result-display {
+  padding: 1rem;
+  background-color: #000;
+  border-radius: 8px;
+  border: 1px solid #333;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.handle {
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: #888;
+  word-break: break-all;
+}
+
+.result {
+  color: #4caf50;
+  font-weight: bold;
+  font-size: 1.1rem;
+}
+
+.features-list {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.feature-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background-color: #000;
+  border-radius: 8px;
+  border: 1px solid #333;
+}
+
+.checkmark {
+  color: #4caf50;
+  font-weight: bold;
+  font-size: 1.2rem;
+}
+
+.button-group {
+  margin: 1.5rem 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+}
+
+.btn {
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  font-size: 0.9rem;
+  min-width: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.icon {
+  font-size: 1rem;
+  font-weight: bold;
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.btn-primary {
+  background-color: #FFEB3B;
+  color: black;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #FDD835;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 235, 59, 0.3);
+}
+
+.btn-secondary {
+  background-color: #2a2a2a;
+  color: #FFEB3B;
+  border: 1px solid #FFEB3B;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: #FFEB3B;
+  color: black;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 235, 59, 0.2);
+}
+
+.btn-success {
+  background-color: #28a745;
+  color: white;
+}
+
+.btn-success:hover:not(:disabled) {
+  background-color: #1e7e34;
+}
+
+.btn-warning {
+  background-color: #ffd208;
+  color: #000;
+}
+
+.btn-warning:hover:not(:disabled) {
+  background-color: #e6bc00;
+}
+
+.btn-danger {
+  background-color: #dc3545;
+  color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background-color: #c82333;
+}
+
+.connect-btn {
+  background-color: #ffd208;
+  color: #000;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s ease;
+  font-size: 0.9rem;
+  min-width: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.connect-btn:hover {
+  background-color: #e6bc00;
+}
+
+.connect-btn-header {
+  background-color: #ffd208;
+  color: #000;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s ease;
+  font-size: 0.85rem;
+  min-width: 100px;
+}
+
+.connect-btn-header:hover {
+  background-color: #e6bc00;
+}
+
+.disconnect-btn-header {
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s ease;
+  font-size: 0.85rem;
+  min-width: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.disconnect-btn-header:hover {
+  background-color: #c82333;
+}
+
+.lucide-icon {
+  flex-shrink: 0;
+}
+
+.disconnect-section {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #333;
+}
+
+.result {
+  color: #4caf50;
+  font-weight: bold;
+  font-size: 1.1rem;
+}
+
+.message {
+  padding: 1rem;
+  background-color: #000;
+  border-radius: 8px;
+  margin-top: 1rem;
+  color: #e0e0e0;
+  border-left: 4px solid #ffd208;
+  border: 1px solid #333;
+}
+
+.success {
+  color: #4caf50;
+}
+
+.error {
+  color: #f44336;
+}
+
+.note {
+  font-size: 0.9em;
+  color: #888;
+  margin-top: 1rem;
+  padding: 1rem;
+  background-color: #000;
+  border-radius: 8px;
+  border: 1px solid #333;
+}
+
+/* Glass Card Styles */
+.glass-card {
+  background-color: #1a1a1a;
+  border-radius: 16px;
+  border: 1px solid #333;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.info-card {
+  padding: 1rem;
+  background-color: #000;
+  border-radius: 8px;
+  border: 1px solid #333;
+}
+
+/* Mobile Wallet Connection Improvements */
+.mobile-wallet-connect {
+  position: relative;
+}
+
+.mobile-wallet-connect button {
+  min-height: 44px; /* iOS touch target minimum */
+  min-width: 44px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-wallet-connect button:active {
+  transform: scale(0.98);
+  transition: transform 0.1s ease;
+}
+
+/* RainbowKit Mobile Optimizations */
+[data-rk] {
+  touch-action: manipulation;
+}
+
+[data-rk] button {
+  min-height: 44px;
+  min-width: 44px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+[data-rk] button:active {
+  transform: scale(0.98);
+  transition: transform 0.1s ease;
+}
+
+/* RainbowKit ConnectButton Orange Styling */
+[data-rk] button[data-testid="rk-connect-button"],
+[data-rk] button[data-testid="rk-account-button"],
+[data-rk] button[class*="rk-connect-button"],
+[data-rk] button[class*="rk-account-button"] {
+  background-color: #FB923C !important;
+  color: white !important;
+  border: 4px solid #EA580C !important;
+  border-radius: 8px !important;
+  box-shadow: 4px 4px 0px 0px rgba(234, 88, 12, 0.8) !important;
+  font-weight: 900 !important;
+  padding: 8px 16px !important;
+  transition: all 0.2s ease !important;
+}
+
+[data-rk] button[data-testid="rk-connect-button"]:hover:not(:disabled),
+[data-rk] button[data-testid="rk-account-button"]:hover:not(:disabled),
+[data-rk] button[class*="rk-connect-button"]:hover:not(:disabled),
+[data-rk] button[class*="rk-account-button"]:hover:not(:disabled) {
+  transform: translate(4px, 4px) !important;
+  box-shadow: none !important;
+}
+
+/* Button Breathe Animation on Hover - Using box-shadow to avoid transform conflicts */
+@keyframes breathe {
+  0%, 100% {
+    box-shadow: 4px 4px 0px 0px rgba(234, 88, 12, 0.8);
+  }
+  50% {
+    box-shadow: 6px 6px 0px 0px rgba(234, 88, 12, 0.9);
+  }
+}
+
+/* Apply breathe animation to buttons on hover */
+button:not(:disabled):hover:not([class*="rk-"]):not([class*="ConnectButton"]) {
+  animation: breathe 1.5s ease-in-out infinite;
+}
+
+/* Special handling for buttons that already have shadow transforms */
+button:not(:disabled):hover[class*="shadow-"] {
+  animation: breathe 1.5s ease-in-out infinite;
+}
+
+/* RainbowKit Modal/Dropdown Styling - Removed sepia colors to use default RainbowKit styling */
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .header-content {
+    flex-direction: column;
+    gap: 1rem;
+    padding: 0 1rem;
+  }
+  
+  .container {
+    padding: 0 1rem;
+  }
+  
+  .main-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  
+  .app-title {
+    font-size: 1.5rem;
+  }
+  
+  .section {
+    margin-bottom: 1rem;
+  }
+  
+  .section-header {
+    padding: 1rem;
+  }
+  
+  .section-content {
+    padding: 1rem;
+  }
+  
+  .button-group {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .btn {
+    width: 100%;
+    margin-right: 0;
+  }
+  
+  .demo-controls {
+    gap: 1rem;
+  }
+  
+  .control-group {
+    gap: 0.5rem;
+  }
+  
+  /* Mobile-specific wallet connection improvements */
+  .mobile-wallet-connect {
+    width: 100%;
+    max-width: 200px;
+  }
+  
+  .mobile-wallet-connect button {
+    width: 100%;
+    padding: 12px 16px;
+    font-size: 16px; /* Prevent zoom on iOS */
+    border-radius: 8px;
+  }
+  
+  /* Prevent automatic zoom on mobile input fields */
+  input[type="text"],
+  input[type="email"],
+  input[type="number"],
+  input[type="password"],
+  input[type="search"],
+  input[type="tel"],
+  input[type="url"],
+  textarea,
+  select {
+    font-size: 16px !important; /* Prevent zoom on iOS Safari */
+  }
+  
+  /* Ensure inputs don't trigger zoom offset */
+  input:focus,
+  textarea:focus,
+  select:focus {
+    transform: none !important;
+    -webkit-transform: none !important;
+  }
+}
