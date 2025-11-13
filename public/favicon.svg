@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Rounded square with bold orange border -->
+  <rect x="48" y="48" width="416" height="416" rx="80" ry="80" fill="#FB923C" stroke="#EA580C" stroke-width="40"/>
+
+  <!-- Simple white shield glyph -->
+  <path fill="#FFFFFF" d="M256 132c-34 24-78 36-120 42v110c0 69 56 126 120 156 64-30 120-87 120-156V174c-42-6-86-18-120-42zm0 36c28 18 64 30 96 36v80c0 49-39 95-96 124-57-29-96-75-96-124v-80c32-6 68-18 96-36z"/>
+
+  <!-- Tiny highlight for depth -->
+  <rect x="80" y="80" width="352" height="352" rx="68" ry="68" fill="none" stroke="#FFFFFF" stroke-opacity="0.15" stroke-width="8"/>
+</svg>

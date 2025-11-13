@@ -59,11 +59,13 @@ export default function FheRaffle({ account, chainId, isConnected, fhevmStatus }
   const [mazaAllowance, setMazaAllowance] = useState<string>('0');
   const [isLoadingBalance, setIsLoadingBalance] = useState<boolean>(true); // Start as true to prevent showing insufficient before load
   const [hasLoadedBalanceOnce, setHasLoadedBalanceOnce] = useState<boolean>(false);
+  const previousAccountRef = useRef<string | undefined>(undefined);
   const [isLoadingDrawnPools, setIsLoadingDrawnPools] = useState<boolean>(true); // Start as true to show skeleton on initial load
   const [hasLoadedDrawnPoolsOnce, setHasLoadedDrawnPoolsOnce] = useState<boolean>(false); // Track if pools have been loaded at least once
   const [isLoadingPoolData, setIsLoadingPoolData] = useState<boolean>(true); // Track initial pool data loading
   const [showFAQ, setShowFAQ] = useState<boolean>(false);
   const [showClaimConfetti, setShowClaimConfetti] = useState<boolean>(false);
+  const lastLoadedPoolIdRef = useRef<number>(-1); // Track last pool ID we loaded past pools for
   const [isEntering, setIsEntering] = useState<boolean>(false);
   const [isApproving, setIsApproving] = useState<boolean>(false);
   const [isDrawingWinners, setIsDrawingWinners] = useState<boolean>(false);
@@ -221,8 +223,13 @@ export default function FheRaffle({ account, chainId, isConnected, fhevmStatus }
         await checkUserWinnerStatus(Number(poolId), contract);
       }
 
+      // Only reload past pools if pool ID changed (new pool created) or on initial load
+      const currentPoolIdNum = Number(poolId);
+      if (currentPoolIdNum !== lastLoadedPoolIdRef.current || !hasLoadedDrawnPoolsOnce) {
         // Load past pools with loading indicator on initial load only
-        await loadPastPools(Number(poolId), contract, !hasLoadedDrawnPoolsOnce);
+        await loadPastPools(currentPoolIdNum, contract, !hasLoadedDrawnPoolsOnce);
+        lastLoadedPoolIdRef.current = currentPoolIdNum;
+      }
     } catch (error: any) {
       // Silently handle errors - UI will show default/empty state
       setIsLoadingDrawnPools(false); // Stop loading even on error
@@ -316,12 +323,126 @@ export default function FheRaffle({ account, chainId, isConnected, fhevmStatus }
     }
   }, [hasLoadedBalanceOnce, ethereumProvider]);
 
-  // Load balance once on initial mount (after token address is known)
+  // Reset balance loading state when account changes (wallet switch)
+  useEffect(() => {
+    if (account !== previousAccountRef.current) {
+      // Account changed - reset balance state and reload
+      if (previousAccountRef.current !== undefined) {
+        // This is a wallet switch, not initial load
+        setHasLoadedBalanceOnce(false);
+        setMazaBalance('0');
+        setMazaAllowance('0');
+        setIsLoadingBalance(true);
+      }
+      previousAccountRef.current = account;
+    }
+  }, [account]);
+
+  // Load balance on initial mount or when account changes (after token address is known)
   useEffect(() => {
     if (isConnected && contractAddress && mazaTokenAddress && account && !hasLoadedBalanceOnce) {
       loadMazaTokenData(mazaTokenAddress, account, contractAddress, true);
     }
   }, [isConnected, contractAddress, mazaTokenAddress, account, hasLoadedBalanceOnce, loadMazaTokenData]);
+
+  // Periodic balance refresh every 10 seconds
+  useEffect(() => {
+    if (!isConnected || !contractAddress || !mazaTokenAddress || !account) {
+      return;
+    }
+
+    // Refresh balance periodically
+    const balanceInterval = setInterval(() => {
+      loadMazaTokenData(mazaTokenAddress, account, contractAddress, false);
+    }, 10000); // Every 10 seconds
+
+    return () => clearInterval(balanceInterval);
+  }, [isConnected, contractAddress, mazaTokenAddress, account, loadMazaTokenData]);
+
+  // Listen for Transfer and Approval events to update balance/allowance in real-time
+  useEffect(() => {
+    if (!isConnected || !mazaTokenAddress || !account || !ethereumProvider) {
+      return;
+    }
+
+    let tokenContract: ethers.Contract | null = null;
+    let transferListenerRef: any = null;
+    let approvalListenerRef: any = null;
+
+    const setupEventListeners = async () => {
+      try {
+        const provider = new ethers.BrowserProvider(ethereumProvider);
+        tokenContract = new ethers.Contract(mazaTokenAddress, ERC20_ABI, provider);
+        
+        const handleTransfer = async () => {
+          // Refresh balance when transfer occurs
+          if (contractAddress) {
+            await loadMazaTokenData(mazaTokenAddress, account, contractAddress, false);
+          }
+        };
+
+        const handleApproval = async () => {
+          // Refresh allowance when approval occurs
+          if (contractAddress) {
+            await loadMazaTokenData(mazaTokenAddress, account, contractAddress, false);
+          }
+        };
+
+        // Listen for Transfer events involving the current account
+        // Handle both incoming (to == account) and outgoing (from == account) transfers
+        const transferEventHandler = (from: string, to: string) => {
+          const fromLower = from.toLowerCase();
+          const toLower = to.toLowerCase();
+          const accountLower = account.toLowerCase();
+          
+          // Refresh balance if transfer involves the current account
+          if (fromLower === accountLower || toLower === accountLower) {
+            handleTransfer();
+          }
+        };
+        
+        // Listen for Approval events for the current account
+        const approvalEventHandler = (owner: string) => {
+          if (owner.toLowerCase() === account.toLowerCase()) {
+            handleApproval();
+          }
+        };
+
+        // Set up event listeners using the contract's event interface
+        tokenContract.on('Transfer', transferEventHandler);
+        tokenContract.on('Approval', approvalEventHandler);
+        
+        transferListenerRef = { 
+          eventName: 'Transfer', 
+          listener: transferEventHandler
+        };
+        approvalListenerRef = { 
+          eventName: 'Approval', 
+          listener: approvalEventHandler 
+        };
+      } catch (error) {
+        // Silently handle errors - event listener setup might fail
+        console.error('Failed to setup event listeners:', error);
+      }
+    };
+
+    setupEventListeners();
+
+    return () => {
+      if (tokenContract) {
+        try {
+          if (transferListenerRef) {
+            tokenContract.off('Transfer', transferListenerRef.listener);
+          }
+          if (approvalListenerRef) {
+            tokenContract.off('Approval', approvalListenerRef.listener);
+          }
+        } catch (error) {
+          // Ignore cleanup errors
+        }
+      }
+    };
+  }, [isConnected, mazaTokenAddress, account, contractAddress, ethereumProvider, loadMazaTokenData]);
 
   const loadWinners = async (poolId: number, contract: ethers.Contract) => {
     try {
@@ -356,57 +477,109 @@ export default function FheRaffle({ account, chainId, isConnected, fhevmStatus }
       if (showLoading) {
         setIsLoadingDrawnPools(true);
       }
-      const pools: PastPoolData[] = [];
+      
       // Load last 10 pools
       const startId = Math.max(0, currentPoolId - 10);
-      for (let i = startId; i < currentPoolId; i++) {
+      const poolIds = Array.from({ length: currentPoolId - startId }, (_, i) => startId + i);
+      
+      // Step 1: Load all pool basic data in parallel
+      const poolPromises = poolIds.map(async (poolId) => {
         try {
-          const pool = await contract.getPool(i);
-          const poolData: PastPoolData = {
-            poolId: i,
-            startTime: pool.startTime,
-            endTime: pool.endTime,
-            totalEntries: pool.totalEntries,
-            totalAmount: pool.totalAmount,
-            isClosed: pool.isClosed,
-            winnersDrawn: pool.winnersDrawn,
-            participantCount: pool.participantCount,
+          const pool = await contract.getPool(poolId);
+          return {
+            poolId,
+            pool,
+            success: true,
           };
-
-          if (pool.winnersDrawn) {
-            const winnersData = await contract.getPoolWinners(i);
-            poolData.winners = winnersData[0].map((addr: string, idx: number) => ({
-              address: addr,
-              percentage: winnersData[1][idx],
-              reward: winnersData[2][idx],
-              claimed: winnersData[3][idx],
-            }));
-
-            // Load random seed data
-            try {
-              const randomSeedHandle = await contract.getEncryptedRandomSeed(i);
-              poolData.randomSeedHandle = ethers.hexlify(randomSeedHandle);
-            } catch (error) {
-              // Random seed might not be available
-            }
-
-            if (account) {
-              const result = await contract.isWinner(i, account);
-              poolData.userWinnerInfo = {
-                isWinner: result[0],
-                reward: result[1],
-                claimed: result[2],
-              };
-            }
-          }
-
-          pools.push(poolData);
         } catch (error) {
-          // Pool might not exist, skip
+          return { poolId, pool: null, success: false };
         }
-      }
-      setPastPools(pools.reverse()); // Most recent first
-      setHasLoadedDrawnPoolsOnce(true); // Mark as loaded at least once
+      });
+      
+      const poolResults = await Promise.all(poolPromises);
+      
+      // Step 2: Filter pools that exist and have winners drawn, then load winners data in parallel
+      const poolsWithWinners = poolResults.filter(
+        (result) => result.success && result.pool && result.pool.winnersDrawn
+      );
+      
+      const winnersPromises = poolsWithWinners.map(async (result) => {
+        try {
+          const [winnersData, randomSeedHandle, userWinnerResult] = await Promise.all([
+            contract.getPoolWinners(result.poolId),
+            contract.getEncryptedRandomSeed(result.poolId).catch(() => null),
+            account ? contract.isWinner(result.poolId, account).catch(() => null) : Promise.resolve(null),
+          ]);
+          
+          return {
+            poolId: result.poolId,
+            winnersData,
+            randomSeedHandle,
+            userWinnerResult,
+          };
+        } catch (error) {
+          return {
+            poolId: result.poolId,
+            winnersData: null,
+            randomSeedHandle: null,
+            userWinnerResult: null,
+          };
+        }
+      });
+      
+      const winnersResults = await Promise.all(winnersPromises);
+      
+      // Step 3: Combine all data
+      const poolsMap = new Map<number, PastPoolData>();
+      
+      // Process all pools (with and without winners)
+      poolResults.forEach((result) => {
+        if (!result.success || !result.pool) return;
+        
+        const poolData: PastPoolData = {
+          poolId: result.poolId,
+          startTime: result.pool.startTime,
+          endTime: result.pool.endTime,
+          totalEntries: result.pool.totalEntries,
+          totalAmount: result.pool.totalAmount,
+          isClosed: result.pool.isClosed,
+          winnersDrawn: result.pool.winnersDrawn,
+          participantCount: result.pool.participantCount,
+        };
+        
+        poolsMap.set(result.poolId, poolData);
+      });
+      
+      // Add winners data to pools that have winners
+      winnersResults.forEach((winnersResult) => {
+        const poolData = poolsMap.get(winnersResult.poolId);
+        if (!poolData || !winnersResult.winnersData) return;
+        
+        poolData.winners = winnersResult.winnersData[0].map((addr: string, idx: number) => ({
+          address: addr,
+          percentage: winnersResult.winnersData[1][idx],
+          reward: winnersResult.winnersData[2][idx],
+          claimed: winnersResult.winnersData[3][idx],
+        }));
+        
+        if (winnersResult.randomSeedHandle) {
+          poolData.randomSeedHandle = ethers.hexlify(winnersResult.randomSeedHandle);
+        }
+        
+        if (winnersResult.userWinnerResult) {
+          poolData.userWinnerInfo = {
+            isWinner: winnersResult.userWinnerResult[0],
+            reward: winnersResult.userWinnerResult[1],
+            claimed: winnersResult.userWinnerResult[2],
+          };
+        }
+      });
+      
+      // Convert map to array and sort by poolId (most recent first)
+      const pools = Array.from(poolsMap.values()).sort((a, b) => b.poolId - a.poolId);
+      
+      setPastPools(pools);
+      setHasLoadedDrawnPoolsOnce(true);
     } catch (error: any) {
       // Silently handle errors
       setHasLoadedDrawnPoolsOnce(true); // Mark as attempted even on error
@@ -514,6 +687,12 @@ export default function FheRaffle({ account, chainId, isConnected, fhevmStatus }
 
       removeToast(toastId);
       addToast('Successfully entered the pool! Good luck!', 'success');
+      
+      // Reload token data to update balance after entry fee is deducted
+      if (mazaTokenAddress && account && contractAddress) {
+        await loadMazaTokenData(mazaTokenAddress, account, contractAddress, false);
+      }
+      
       await loadContractData();
     } catch (error: any) {
       removeToast(toastId);
