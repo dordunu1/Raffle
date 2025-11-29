@@ -19,22 +19,25 @@ import type {
   TypedContractMethod,
 } from "../../../../common";
 
-export interface EthereumConfigInterface extends Interface {
-  getFunction(nameOrSignature: "protocolId"): FunctionFragment;
+export interface ZamaEthereumConfigInterface extends Interface {
+  getFunction(nameOrSignature: "confidentialProtocolId"): FunctionFragment;
 
   encodeFunctionData(
-    functionFragment: "protocolId",
+    functionFragment: "confidentialProtocolId",
     values?: undefined
   ): string;
 
-  decodeFunctionResult(functionFragment: "protocolId", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "confidentialProtocolId",
+    data: BytesLike
+  ): Result;
 }
 
-export interface EthereumConfig extends BaseContract {
-  connect(runner?: ContractRunner | null): EthereumConfig;
+export interface ZamaEthereumConfig extends BaseContract {
+  connect(runner?: ContractRunner | null): ZamaEthereumConfig;
   waitForDeployment(): Promise<this>;
 
-  interface: EthereumConfigInterface;
+  interface: ZamaEthereumConfigInterface;
 
   queryFilter<TCEvent extends TypedContractEvent>(
     event: TCEvent,
@@ -73,14 +76,14 @@ export interface EthereumConfig extends BaseContract {
     event?: TCEvent
   ): Promise<this>;
 
-  protocolId: TypedContractMethod<[], [bigint], "view">;
+  confidentialProtocolId: TypedContractMethod<[], [bigint], "view">;
 
   getFunction<T extends ContractMethod = ContractMethod>(
     key: string | FunctionFragment
   ): T;
 
   getFunction(
-    nameOrSignature: "protocolId"
+    nameOrSignature: "confidentialProtocolId"
   ): TypedContractMethod<[], [bigint], "view">;
 
   filters: {};

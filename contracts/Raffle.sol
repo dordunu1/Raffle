@@ -2,14 +2,14 @@
 pragma solidity ^0.8.24;
 
 import {FHE, ebool, euint8, euint32} from "@fhevm/solidity/lib/FHE.sol";
-import {EthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
+import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @title FHE Raffle Contract
 /// @notice A contract that runs raffles with FHE-powered randomness
 /// @dev Uses FHE randomness to select winners fairly and transparently
-contract Raffle is EthereumConfig {
+contract Raffle is ZamaEthereumConfig {
     using SafeERC20 for IERC20;
 
     // Constants
@@ -251,14 +251,11 @@ contract Raffle is EthereumConfig {
         require(pool.randomSeedHandle != bytes32(0), "Random seed not generated");
         require(!pool.randomSeedRevealed, "Random seed already revealed");
 
-        // Verify the decryption proof
+        // Verify the decryption proof (reverts on failure)
         bytes32[] memory handlesList = new bytes32[](1);
         handlesList[0] = pool.randomSeedHandle;
 
-        require(
-            FHE.verifySignatures(handlesList, cleartexts, decryptionProof),
-            "Invalid decryption proof"
-        );
+        FHE.checkSignatures(handlesList, cleartexts, decryptionProof);
 
         // Decode the random seed (as uint32, then expand to uint256 deterministically)
         uint32 randomSeed32 = abi.decode(cleartexts, (uint32));

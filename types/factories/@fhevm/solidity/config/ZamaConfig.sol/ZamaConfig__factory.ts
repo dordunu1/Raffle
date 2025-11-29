@@ -10,50 +10,31 @@ import {
 import type { Signer, ContractDeployTransaction, ContractRunner } from "ethers";
 import type { NonPayableOverrides } from "../../../../../common";
 import type {
-  FHE,
-  FHEInterface,
-} from "../../../../../@fhevm/solidity/lib/FHE.sol/FHE";
+  ZamaConfig,
+  ZamaConfigInterface,
+} from "../../../../../@fhevm/solidity/config/ZamaConfig.sol/ZamaConfig";
 
 const _abi = [
   {
     inputs: [],
-    name: "InvalidKMSSignatures",
+    name: "ZamaProtocolUnsupported",
     type: "error",
-  },
-  {
-    anonymous: false,
-    inputs: [
-      {
-        indexed: false,
-        internalType: "bytes32[]",
-        name: "handlesList",
-        type: "bytes32[]",
-      },
-      {
-        indexed: false,
-        internalType: "bytes",
-        name: "abiEncodedCleartexts",
-        type: "bytes",
-      },
-    ],
-    name: "PublicDecryptionVerified",
-    type: "event",
   },
 ] as const;
 
 const _bytecode =
   "0x602c6032600b8282823980515f1a607314602657634e487b7160e01b5f525f60045260245ffd5b305f52607381538281f3fe730000000000000000000000000000000000000000301460806040525f80fdfea164736f6c6343000818000a";
 
-type FHEConstructorParams =
+type ZamaConfigConstructorParams =
   | [signer?: Signer]
   | ConstructorParameters<typeof ContractFactory>;
 
 const isSuperArgs = (
-  xs: FHEConstructorParams
+  xs: ZamaConfigConstructorParams
 ): xs is ConstructorParameters<typeof ContractFactory> => xs.length > 1;
 
-export class FHE__factory extends ContractFactory {
-  constructor(...args: FHEConstructorParams) {
+export class ZamaConfig__factory extends ContractFactory {
+  constructor(...args: ZamaConfigConstructorParams) {
     if (isSuperArgs(args)) {
       super(...args);
     } else {
@@ -68,21 +49,21 @@ export class FHE__factory extends ContractFactory {
   }
   override deploy(overrides?: NonPayableOverrides & { from?: string }) {
     return super.deploy(overrides || {}) as Promise<
-      FHE & {
+      ZamaConfig & {
         deploymentTransaction(): ContractTransactionResponse;
       }
     >;
   }
-  override connect(runner: ContractRunner | null): FHE__factory {
-    return super.connect(runner) as FHE__factory;
+  override connect(runner: ContractRunner | null): ZamaConfig__factory {
+    return super.connect(runner) as ZamaConfig__factory;
   }
 
   static readonly bytecode = _bytecode;
   static readonly abi = _abi;
-  static createInterface(): FHEInterface {
-    return new Interface(_abi) as FHEInterface;
+  static createInterface(): ZamaConfigInterface {
+    return new Interface(_abi) as ZamaConfigInterface;
   }
-  static connect(address: string, runner?: ContractRunner | null): FHE {
-    return new Contract(address, _abi, runner) as unknown as FHE;
+  static connect(address: string, runner?: ContractRunner | null): ZamaConfig {
+    return new Contract(address, _abi, runner) as unknown as ZamaConfig;
   }
 }

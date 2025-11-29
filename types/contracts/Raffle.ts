@@ -33,6 +33,7 @@ export interface RaffleInterface extends Interface {
       | "WINNER_SHARE_PERCENTAGE"
       | "claimReward"
       | "closePool"
+      | "confidentialProtocolId"
       | "currentPoolId"
       | "drawWinners"
       | "enterPool"
@@ -49,7 +50,6 @@ export interface RaffleInterface extends Interface {
       | "participantIndex"
       | "pools"
       | "protocolFeeRecipient"
-      | "protocolId"
       | "setProtocolFeeRecipient"
   ): FunctionFragment;
 
@@ -60,6 +60,7 @@ export interface RaffleInterface extends Interface {
       | "PoolEntry"
       | "PoolStarted"
       | "ProtocolFeeWithdrawn"
+      | "PublicDecryptionVerified"
       | "RandomSeedGenerated"
       | "RewardClaimed"
       | "WinnersDrawn"
@@ -89,6 +90,10 @@ export interface RaffleInterface extends Interface {
   encodeFunctionData(
     functionFragment: "closePool",
     values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "confidentialProtocolId",
+    values?: undefined
   ): string;
   encodeFunctionData(
     functionFragment: "currentPoolId",
@@ -143,10 +148,6 @@ export interface RaffleInterface extends Interface {
     values?: undefined
   ): string;
   encodeFunctionData(
-    functionFragment: "protocolId",
-    values?: undefined
-  ): string;
-  encodeFunctionData(
     functionFragment: "setProtocolFeeRecipient",
     values: [AddressLike]
   ): string;
@@ -173,6 +174,10 @@ export interface RaffleInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "closePool", data: BytesLike): Result;
+  decodeFunctionResult(
+    functionFragment: "confidentialProtocolId",
+    data: BytesLike
+  ): Result;
   decodeFunctionResult(
     functionFragment: "currentPoolId",
     data: BytesLike
@@ -219,7 +224,6 @@ export interface RaffleInterface extends Interface {
     functionFragment: "protocolFeeRecipient",
     data: BytesLike
   ): Result;
-  decodeFunctionResult(functionFragment: "protocolId", data: BytesLike): Result;
   decodeFunctionResult(
     functionFragment: "setProtocolFeeRecipient",
     data: BytesLike
@@ -320,6 +324,25 @@ export namespace ProtocolFeeWithdrawnEvent {
   export interface OutputObject {
     poolId: bigint;
     amount: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace PublicDecryptionVerifiedEvent {
+  export type InputTuple = [
+    handlesList: BytesLike[],
+    abiEncodedCleartexts: BytesLike
+  ];
+  export type OutputTuple = [
+    handlesList: string[],
+    abiEncodedCleartexts: string
+  ];
+  export interface OutputObject {
+    handlesList: string[];
+    abiEncodedCleartexts: string;
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -441,6 +464,8 @@ export interface Raffle extends BaseContract {
 
   closePool: TypedContractMethod<[poolId: BigNumberish], [void], "nonpayable">;
 
+  confidentialProtocolId: TypedContractMethod<[], [bigint], "view">;
+
   currentPoolId: TypedContractMethod<[], [bigint], "view">;
 
   drawWinners: TypedContractMethod<
@@ -556,8 +581,6 @@ export interface Raffle extends BaseContract {
 
   protocolFeeRecipient: TypedContractMethod<[], [string], "view">;
 
-  protocolId: TypedContractMethod<[], [bigint], "view">;
-
   setProtocolFeeRecipient: TypedContractMethod<
     [_newRecipient: AddressLike],
     [void],
@@ -589,6 +612,9 @@ export interface Raffle extends BaseContract {
   getFunction(
     nameOrSignature: "closePool"
   ): TypedContractMethod<[poolId: BigNumberish], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "confidentialProtocolId"
+  ): TypedContractMethod<[], [bigint], "view">;
   getFunction(
     nameOrSignature: "currentPoolId"
   ): TypedContractMethod<[], [bigint], "view">;
@@ -709,9 +735,6 @@ export interface Raffle extends BaseContract {
     nameOrSignature: "protocolFeeRecipient"
   ): TypedContractMethod<[], [string], "view">;
   getFunction(
-    nameOrSignature: "protocolId"
-  ): TypedContractMethod<[], [bigint], "view">;
-  getFunction(
     nameOrSignature: "setProtocolFeeRecipient"
   ): TypedContractMethod<[_newRecipient: AddressLike], [void], "nonpayable">;
 
@@ -749,6 +772,13 @@ export interface Raffle extends BaseContract {
     ProtocolFeeWithdrawnEvent.InputTuple,
     ProtocolFeeWithdrawnEvent.OutputTuple,
     ProtocolFeeWithdrawnEvent.OutputObject
+  >;
+  getEvent(
+    key: "PublicDecryptionVerified"
+  ): TypedContractEvent<
+    PublicDecryptionVerifiedEvent.InputTuple,
+    PublicDecryptionVerifiedEvent.OutputTuple,
+    PublicDecryptionVerifiedEvent.OutputObject
   >;
   getEvent(
     key: "RandomSeedGenerated"
@@ -826,6 +856,17 @@ export interface Raffle extends BaseContract {
       ProtocolFeeWithdrawnEvent.InputTuple,
       ProtocolFeeWithdrawnEvent.OutputTuple,
       ProtocolFeeWithdrawnEvent.OutputObject
+    >;
+
+    "PublicDecryptionVerified(bytes32[],bytes)": TypedContractEvent<
+      PublicDecryptionVerifiedEvent.InputTuple,
+      PublicDecryptionVerifiedEvent.OutputTuple,
+      PublicDecryptionVerifiedEvent.OutputObject
+    >;
+    PublicDecryptionVerified: TypedContractEvent<
+      PublicDecryptionVerifiedEvent.InputTuple,
+      PublicDecryptionVerifiedEvent.OutputTuple,
+      PublicDecryptionVerifiedEvent.OutputObject
     >;
 
     "RandomSeedGenerated(uint256,bytes32)": TypedContractEvent<

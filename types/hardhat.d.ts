@@ -14,9 +14,13 @@ import * as Contracts from ".";
 declare module "hardhat/types/runtime" {
   interface HardhatEthersHelpers extends HardhatEthersHelpersBase {
     getContractFactory(
-      name: "EthereumConfig",
+      name: "ZamaConfig",
       signerOrOptions?: ethers.Signer | FactoryOptions
-    ): Promise<Contracts.EthereumConfig__factory>;
+    ): Promise<Contracts.ZamaConfig__factory>;
+    getContractFactory(
+      name: "ZamaEthereumConfig",
+      signerOrOptions?: ethers.Signer | FactoryOptions
+    ): Promise<Contracts.ZamaEthereumConfig__factory>;
     getContractFactory(
       name: "FHE",
       signerOrOptions?: ethers.Signer | FactoryOptions
@@ -74,10 +78,6 @@ declare module "hardhat/types/runtime" {
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.IERC165__factory>;
     getContractFactory(
-      name: "CoinToss",
-      signerOrOptions?: ethers.Signer | FactoryOptions
-    ): Promise<Contracts.CoinToss__factory>;
-    getContractFactory(
       name: "MazaToken",
       signerOrOptions?: ethers.Signer | FactoryOptions
     ): Promise<Contracts.MazaToken__factory>;
@@ -87,10 +87,15 @@ declare module "hardhat/types/runtime" {
     ): Promise<Contracts.Raffle__factory>;
 
     getContractAt(
-      name: "EthereumConfig",
+      name: "ZamaConfig",
       address: string | ethers.Addressable,
       signer?: ethers.Signer
-    ): Promise<Contracts.EthereumConfig>;
+    ): Promise<Contracts.ZamaConfig>;
+    getContractAt(
+      name: "ZamaEthereumConfig",
+      address: string | ethers.Addressable,
+      signer?: ethers.Signer
+    ): Promise<Contracts.ZamaEthereumConfig>;
     getContractAt(
       name: "FHE",
       address: string | ethers.Addressable,
@@ -161,11 +166,6 @@ declare module "hardhat/types/runtime" {
       address: string | ethers.Addressable,
       signer?: ethers.Signer
     ): Promise<Contracts.IERC165>;
-    getContractAt(
-      name: "CoinToss",
-      address: string | ethers.Addressable,
-      signer?: ethers.Signer
-    ): Promise<Contracts.CoinToss>;
     getContractAt(
       name: "MazaToken",
       address: string | ethers.Addressable,
@@ -178,9 +178,13 @@ declare module "hardhat/types/runtime" {
     ): Promise<Contracts.Raffle>;
 
     deployContract(
-      name: "EthereumConfig",
+      name: "ZamaConfig",
       signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.EthereumConfig>;
+    ): Promise<Contracts.ZamaConfig>;
+    deployContract(
+      name: "ZamaEthereumConfig",
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ZamaEthereumConfig>;
     deployContract(
       name: "FHE",
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -237,10 +241,6 @@ declare module "hardhat/types/runtime" {
       name: "IERC165",
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.IERC165>;
-    deployContract(
-      name: "CoinToss",
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.CoinToss>;
     deployContract(
       name: "MazaToken",
       signerOrOptions?: ethers.Signer | DeployContractOptions
@@ -251,10 +251,15 @@ declare module "hardhat/types/runtime" {
     ): Promise<Contracts.Raffle>;
 
     deployContract(
-      name: "EthereumConfig",
+      name: "ZamaConfig",
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.EthereumConfig>;
+    ): Promise<Contracts.ZamaConfig>;
+    deployContract(
+      name: "ZamaEthereumConfig",
+      args: any[],
+      signerOrOptions?: ethers.Signer | DeployContractOptions
+    ): Promise<Contracts.ZamaEthereumConfig>;
     deployContract(
       name: "FHE",
       args: any[],
@@ -325,11 +330,6 @@ declare module "hardhat/types/runtime" {
       args: any[],
       signerOrOptions?: ethers.Signer | DeployContractOptions
     ): Promise<Contracts.IERC165>;
-    deployContract(
-      name: "CoinToss",
-      args: any[],
-      signerOrOptions?: ethers.Signer | DeployContractOptions
-    ): Promise<Contracts.CoinToss>;
     deployContract(
       name: "MazaToken",
       args: any[],
