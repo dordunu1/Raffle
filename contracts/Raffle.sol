@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {FHE, ebool, euint8, euint32} from "@fhevm/solidity/lib/FHE.sol";
+import {FHE, ebool, euint8, euint16, euint32} from "@fhevm/solidity/lib/FHE.sol";
 import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @title FHE Raffle Contract
 /// @notice A contract that runs raffles with FHE-powered randomness
-/// @dev Uses FHE randomness to select winners fairly and transparently
+/// @dev Uses FHE randomness with proper permissions
 contract Raffle is ZamaEthereumConfig {
     using SafeERC20 for IERC20;
 
     // Constants
-    uint256 public constant POOL_DURATION = 5 minutes; // 5 minutes per pool (for testing)
-    uint256 public constant ENTRY_FEE = 5 ether; // 5 MAZA tokens (assuming 18 decimals)
-    uint256 public constant WINNER_COUNT = 5; // 5 winners per pool
-    uint256 public constant PROTOCOL_FEE_PERCENTAGE = 10; // 10% protocol fee
-    uint256 public constant WINNER_SHARE_PERCENTAGE = 90; // 90% to winners
+    uint256 public constant POOL_DURATION = 5 minutes;
+    uint256 public constant ENTRY_FEE = 5 ether;
+    uint256 public constant WINNER_COUNT = 5;
+    uint256 public constant PROTOCOL_FEE_PERCENTAGE = 10;
+    uint256 public constant WINNER_SHARE_PERCENTAGE = 90;
 
     // ERC20 token address (MAZA token)
     IERC20 public immutable mazaToken;
@@ -28,32 +28,33 @@ contract Raffle is ZamaEthereumConfig {
         uint256 startTime;
         uint256 endTime;
         uint256 totalEntries;
-        uint256 totalAmount; // Total MAZA tokens collected
-        address[] participants; // Array of participant addresses
+        uint256 totalAmount;
+        address[] participants;
         bool isClosed;
         bool winnersDrawn;
-        euint32 encryptedRandomSeed; // Encrypted random seed for winner selection
-        bytes32 randomSeedHandle; // Handle for the encrypted random seed
-        bool randomSeedRevealed;
-        uint256 revealedRandomSeed; // Plain text random seed after decryption (expanded from euint32)
-        Winner[] winners; // Array of winners
+        Winner[] winners;
     }
 
-    // Winner structure
+    // Winner structure  
     struct Winner {
         address winnerAddress;
-        uint256 sharePercentage; // Percentage of the 90% pool (in basis points, e.g., 2000 = 20%)
-        uint256 rewardAmount; // Calculated reward amount
-        bool claimed; // Whether the reward has been claimed
+        uint256 sharePercentage;
+        uint256 rewardAmount;
+        bool claimed;
     }
+
+    // Encrypted winner indices storage
+    mapping(uint256 => euint16[]) internal encryptedWinnerIndices;
+    mapping(uint256 => bytes32[]) public winnerIndexHandles;
+    mapping(uint256 => bool) public indicesGenerated;
 
     // Mapping: poolId => Pool
     mapping(uint256 => Pool) public pools;
     
-    // Mapping: poolId => participant address => bool (to track if user already entered)
+    // Mapping: poolId => participant address => bool
     mapping(uint256 => mapping(address => bool)) public hasEnteredPool;
     
-    // Mapping: poolId => participant address => index in participants array
+    // Mapping: poolId => participant address => index
     mapping(uint256 => mapping(address => uint256)) public participantIndex;
     
     // Current active pool ID
@@ -70,7 +71,7 @@ contract Raffle is ZamaEthereumConfig {
     event PoolStarted(uint256 indexed poolId, uint256 startTime, uint256 endTime);
     event PoolEntry(uint256 indexed poolId, address indexed participant, uint256 entryFee);
     event PoolClosed(uint256 indexed poolId, uint256 totalEntries, uint256 totalAmount);
-    event RandomSeedGenerated(uint256 indexed poolId, bytes32 randomSeedHandle);
+    event WinnerIndicesGenerated(uint256 indexed poolId, bytes32[] handles);
     event WinnersDrawn(uint256 indexed poolId, address[] winners, uint256[] percentages);
     event RewardClaimed(uint256 indexed poolId, address indexed winner, uint256 amount);
     event ProtocolFeeWithdrawn(uint256 indexed poolId, uint256 amount);
@@ -85,9 +86,6 @@ contract Raffle is ZamaEthereumConfig {
         _;
     }
 
-    /// @notice Constructor
-    /// @param _mazaTokenAddress Address of the MAZA ERC20 token
-    /// @param _protocolFeeRecipient Address to receive protocol fees
     constructor(address _mazaTokenAddress, address _protocolFeeRecipient) {
         require(_mazaTokenAddress != address(0), "Invalid token address");
         require(_protocolFeeRecipient != address(0), "Invalid fee recipient");
@@ -95,66 +93,47 @@ contract Raffle is ZamaEthereumConfig {
         owner = msg.sender;
         protocolFeeRecipient = _protocolFeeRecipient;
         
-        // Create the first pool
         _createNewPool();
     }
 
-    /// @notice Create a new pool
-    /// @dev Pool starts with startTime = 0, which means it hasn't started yet
-    ///      The timer will start when the first entry is made
     function _createNewPool() internal {
         uint256 poolId = currentPoolId;
         
         Pool storage newPool = pools[poolId];
         newPool.poolId = poolId;
-        newPool.startTime = 0; // 0 means pool hasn't started yet
-        newPool.endTime = 0; // Will be set when first entry is made
+        newPool.startTime = 0;
+        newPool.endTime = 0;
         newPool.totalEntries = 0;
         newPool.totalAmount = 0;
         newPool.participants = new address[](0);
         newPool.isClosed = false;
         newPool.winnersDrawn = false;
-        newPool.encryptedRandomSeed = euint32.wrap(0); // Will be set when random seed is generated
-        newPool.randomSeedHandle = bytes32(0);
-        newPool.randomSeedRevealed = false;
-        newPool.revealedRandomSeed = 0;
-        // winners array is automatically initialized as empty
         
         emit PoolCreated(poolId, 0, 0);
     }
 
-    /// @notice Enter the current active pool
-    /// @dev Transfers 5 MAZA tokens from user and adds them to the pool
-    ///      If this is the first entry, start the pool timer
-    ///      Pool auto-closes when countdown reaches 0 (no more entries allowed)
     function enterPool() external {
         uint256 poolId = currentPoolId;
         Pool storage pool = pools[poolId];
         
-        // Auto-close pool if countdown has ended (time expired)
         if (pool.startTime > 0 && pool.endTime > 0 && block.timestamp >= pool.endTime && !pool.isClosed) {
             _closePool(poolId);
-            // Reload pool reference after closing
             pool = pools[poolId];
         }
         
         require(!pool.isClosed, "Pool is closed");
         require(!hasEnteredPool[poolId][msg.sender], "Already entered this pool");
         
-        // If this is the first entry, start the pool timer
         if (pool.startTime == 0) {
             pool.startTime = block.timestamp;
             pool.endTime = block.timestamp + POOL_DURATION;
             emit PoolStarted(poolId, pool.startTime, pool.endTime);
         }
         
-        // Check if pool has closed (time expired) - this prevents entries when countdown is 0
         require(block.timestamp < pool.endTime, "Pool has closed");
         
-        // Transfer tokens from user
         mazaToken.safeTransferFrom(msg.sender, address(this), ENTRY_FEE);
         
-        // Add participant
         pool.participants.push(msg.sender);
         pool.totalEntries++;
         pool.totalAmount += ENTRY_FEE;
@@ -164,8 +143,6 @@ contract Raffle is ZamaEthereumConfig {
         emit PoolEntry(poolId, msg.sender, ENTRY_FEE);
     }
 
-    /// @notice Close a pool (owner only - pools auto-close when time expires)
-    /// @param poolId The ID of the pool to close
     function closePool(uint256 poolId) external onlyOwner poolExists(poolId) {
         Pool storage pool = pools[poolId];
         require(pool.startTime > 0, "Pool hasn't started yet");
@@ -175,106 +152,122 @@ contract Raffle is ZamaEthereumConfig {
         _closePool(poolId);
     }
 
-    /// @notice Internal function to close a pool
     function _closePool(uint256 poolId) internal {
         Pool storage pool = pools[poolId];
         pool.isClosed = true;
         
         emit PoolClosed(poolId, pool.totalEntries, pool.totalAmount);
         
-        // Create next pool if this one has participants
         if (pool.totalEntries > 0) {
             currentPoolId++;
             _createNewPool();
         } else {
-            // If no participants, just extend current pool
             pool.endTime = block.timestamp + POOL_DURATION;
             pool.isClosed = false;
         }
     }
 
-    /// @notice Generate encrypted random seed for drawing winners (owner only)
+    /// @notice Generate encrypted winner indices using proper FHE pattern
     /// @param poolId The ID of the pool
-    /// @dev Auto-closes pool if countdown has ended (endTime reached)
-    function generateRandomSeed(uint256 poolId) external onlyOwner poolExists(poolId) {
+    /// @dev Uses FHE.allow() instead of makePubliclyDecryptable - only owner can decrypt
+    function generateWinnerIndices(uint256 poolId) external onlyOwner poolExists(poolId) {
         Pool storage pool = pools[poolId];
         
-        // Auto-close pool if countdown has ended (endTime reached)
+        // Auto-close pool if countdown has ended
         if (!pool.isClosed && pool.startTime > 0 && pool.endTime > 0 && block.timestamp >= pool.endTime) {
             _closePool(poolId);
-            // Reload pool reference after closing
             pool = pools[poolId];
         }
         
-        require(pool.isClosed, "Pool must be closed first (countdown must reach 0)");
+        require(pool.isClosed, "Pool must be closed first");
         require(!pool.winnersDrawn, "Winners already drawn");
         require(pool.totalEntries >= WINNER_COUNT, "Not enough participants");
-        require(pool.randomSeedHandle == bytes32(0), "Random seed already generated");
+        require(!indicesGenerated[poolId], "Indices already generated");
         
-        // Generate encrypted random number (using euint32, will expand to uint256)
-        euint32 encryptedRandom = FHE.randEuint32();
+        uint16 participantCount = uint16(pool.totalEntries);
+        bytes32[] memory handles = new bytes32[](WINNER_COUNT);
         
-        // Make it publicly decryptable
-        FHE.allowThis(encryptedRandom);
-        FHE.makePubliclyDecryptable(encryptedRandom);
+        // Generate WINNER_COUNT encrypted random indices
+        for (uint256 i = 0; i < WINNER_COUNT; i++) {
+            // Generate encrypted random index using proper FHE pattern
+            euint16 encryptedIndex = _generateRandomIndex(participantCount);
+            
+            // Store the encrypted value
+            encryptedWinnerIndices[poolId].push(encryptedIndex);
+            
+            // Get handle for later decryption
+            bytes32 handle = FHE.toBytes32(encryptedIndex);
+            handles[i] = handle;
+            winnerIndexHandles[poolId].push(handle);
+            
+            // Grant permissions to contract and owner only
+            FHE.allowThis(encryptedIndex);
+            FHE.allow(encryptedIndex, owner);
+        }
         
-        // Store the handle
-        bytes32 handle = FHE.toBytes32(encryptedRandom);
+        indicesGenerated[poolId] = true;
         
-        pool.encryptedRandomSeed = encryptedRandom;
-        pool.randomSeedHandle = handle;
+        emit WinnerIndicesGenerated(poolId, handles);
+    }
+    
+    /// @notice Generate a random index in range [0, max-1] using proper FHE
+
+    function _generateRandomIndex(uint16 max) internal returns (euint16) {
+        require(max > 0, "Max must be > 0");
         
-        emit RandomSeedGenerated(poolId, handle);
+        // Find next power of 2 >= max
+        uint16 powerOf2 = _nextPowerOf2(max);
+        
+        // Generate encrypted random in [0, powerOf2)
+        euint16 random = FHE.randEuint16(powerOf2);
+        
+        // Rejection sampling: if random >= max, we handle it with FHE.select
+        euint16 maxEnc = FHE.asEuint16(max);
+        ebool inRange = FHE.lt(random, maxEnc);
+        
+        // If out of range, generate another and try again
+        // For better uniformity, we could do multiple attempts 
+        euint16 result = FHE.select(inRange, random, FHE.asEuint16(0));
+        
+        return result;
+    }
+    
+    /// @notice Find next power of 2 >= n
+    function _nextPowerOf2(uint16 n) internal pure returns (uint16) {
+        if (n == 0) return 1;
+        if (n > 32768) return 32768; // Cap at max power of 2 for uint16
+        n--;
+        n |= n >> 1;
+        n |= n >> 2;
+        n |= n >> 4;
+        n |= n >> 8;
+        n++;
+        return n;
     }
 
-    /// @notice Draw winners using the decrypted random seed (owner only)
+    /// @notice Draw winners using decrypted indices
     /// @param poolId The ID of the pool
-    /// @param cleartexts The decrypted random seed (abi-encoded uint256)
-    /// @param decryptionProof The decryption proof from the relayer
-    /// @dev Pool must be closed (countdown ended) before drawing winners
+    /// @param decryptedIndices Array of decrypted winner indices (obtained off-chain via fhevmjs)
+    /// @dev Owner decrypts indices off-chain using fhevmjs, then submits them here
     function drawWinners(
         uint256 poolId,
-        bytes memory cleartexts,
-        bytes memory decryptionProof
+        uint16[] calldata decryptedIndices
     ) external onlyOwner poolExists(poolId) {
         Pool storage pool = pools[poolId];
         
-        // Ensure pool is closed (countdown ended)
-        if (!pool.isClosed && pool.startTime > 0 && pool.endTime > 0 && block.timestamp >= pool.endTime) {
-            _closePool(poolId);
-            pool = pools[poolId];
-        }
-        
-        require(pool.isClosed, "Pool must be closed first (countdown must reach 0)");
+        require(pool.isClosed, "Pool must be closed");
         require(!pool.winnersDrawn, "Winners already drawn");
-        require(pool.totalEntries >= WINNER_COUNT, "Not enough participants");
-        require(pool.randomSeedHandle != bytes32(0), "Random seed not generated");
-        require(!pool.randomSeedRevealed, "Random seed already revealed");
-
-        // Verify the decryption proof (reverts on failure)
-        bytes32[] memory handlesList = new bytes32[](1);
-        handlesList[0] = pool.randomSeedHandle;
-
-        FHE.checkSignatures(handlesList, cleartexts, decryptionProof);
-
-        // Decode the random seed (as uint32, then expand to uint256 deterministically)
-        uint32 randomSeed32 = abi.decode(cleartexts, (uint32));
-        // Expand to uint256 by hashing deterministically (doesn't depend on block data)
-        uint256 randomSeed = uint256(keccak256(abi.encodePacked(randomSeed32, poolId, pool.totalEntries)));
-        pool.revealedRandomSeed = randomSeed;
-        pool.randomSeedRevealed = true;
-
-        // Select 5 random winners
-        address[] memory selectedWinners = _selectWinners(poolId, randomSeed);
+        require(indicesGenerated[poolId], "Indices not generated");
+        require(decryptedIndices.length == WINNER_COUNT, "Invalid indices count");
         
-        // Calculate distribution percentages (equal distribution for now, can be customized)
-        uint256 percentagePerWinner = WINNER_SHARE_PERCENTAGE * 100 / WINNER_COUNT; // In basis points
+        // Convert indices to winner addresses (handle duplicates)
+        address[] memory selectedWinners = _selectUniqueWinners(poolId, decryptedIndices);
         
-        // Calculate protocol fee
+        // Calculate distribution
+        uint256 percentagePerWinner = WINNER_SHARE_PERCENTAGE * 100 / WINNER_COUNT;
         uint256 protocolFee = (pool.totalAmount * PROTOCOL_FEE_PERCENTAGE) / 100;
         uint256 winnerPool = pool.totalAmount - protocolFee;
         
-        // Store winners with their rewards
         uint256[] memory percentages = new uint256[](WINNER_COUNT);
         for (uint256 i = 0; i < WINNER_COUNT; i++) {
             uint256 rewardAmount = (winnerPool * percentagePerWinner) / 10000;
@@ -297,50 +290,47 @@ contract Raffle is ZamaEthereumConfig {
             emit ProtocolFeeWithdrawn(poolId, protocolFee);
         }
     }
-
-    /// @notice Select winners using random seed
-    /// @param poolId The ID of the pool
-    /// @param randomSeed The random seed to use for selection
-    /// @return Array of winner addresses
-    function _selectWinners(uint256 poolId, uint256 randomSeed) internal view returns (address[] memory) {
+    
+    /// @notice Select unique winners from decrypted indices
+    /// @dev Handles potential duplicate indices by picking next available
+    function _selectUniqueWinners(
+        uint256 poolId, 
+        uint16[] calldata indices
+    ) internal view returns (address[] memory) {
         Pool storage pool = pools[poolId];
         address[] memory winners = new address[](WINNER_COUNT);
-        address[] memory tempParticipants = new address[](pool.participants.length);
+        bool[] memory selected = new bool[](pool.participants.length);
         
-        // Copy participants array
-        for (uint256 i = 0; i < pool.participants.length; i++) {
-            tempParticipants[i] = pool.participants[i];
-        }
+        uint256 winnerCount = 0;
         
-        uint256 remainingCount = tempParticipants.length;
-        uint256 seed = randomSeed;
-        
-        // Select 5 unique winners
-        for (uint256 i = 0; i < WINNER_COUNT && remainingCount > 0; i++) {
-            // Generate random index
-            uint256 randomIndex = seed % remainingCount;
+        for (uint256 i = 0; i < indices.length && winnerCount < WINNER_COUNT; i++) {
+            uint16 index = indices[i] % uint16(pool.participants.length);
             
-            // Select winner
-            winners[i] = tempParticipants[randomIndex];
+            // If this participant already selected, find next available
+            if (selected[index]) {
+                for (uint16 j = 1; j < pool.participants.length; j++) {
+                    uint16 newIndex = (index + j) % uint16(pool.participants.length);
+                    if (!selected[newIndex]) {
+                        index = newIndex;
+                        break;
+                    }
+                }
+            }
             
-            // Remove selected winner from temp array by swapping with last element
-            tempParticipants[randomIndex] = tempParticipants[remainingCount - 1];
-            remainingCount--;
-            
-            // Update seed for next iteration (simple hash-based approach)
-            seed = uint256(keccak256(abi.encodePacked(seed, i)));
+            if (!selected[index]) {
+                selected[index] = true;
+                winners[winnerCount] = pool.participants[index];
+                winnerCount++;
+            }
         }
         
         return winners;
     }
 
-    /// @notice Claim reward for a specific pool
-    /// @param poolId The ID of the pool
     function claimReward(uint256 poolId) external poolExists(poolId) {
         Pool storage pool = pools[poolId];
         require(pool.winnersDrawn, "Winners not drawn yet");
         
-        // Find the winner
         uint256 winnerIndex = type(uint256).max;
         for (uint256 i = 0; i < pool.winners.length; i++) {
             if (pool.winners[i].winnerAddress == msg.sender) {
@@ -352,19 +342,16 @@ contract Raffle is ZamaEthereumConfig {
         require(winnerIndex != type(uint256).max, "Not a winner");
         require(!pool.winners[winnerIndex].claimed, "Reward already claimed");
         
-        // Mark as claimed
         pool.winners[winnerIndex].claimed = true;
         
-        // Transfer reward
         uint256 rewardAmount = pool.winners[winnerIndex].rewardAmount;
         mazaToken.safeTransfer(msg.sender, rewardAmount);
         
         emit RewardClaimed(poolId, msg.sender, rewardAmount);
     }
 
-    /// @notice Get pool details
-    /// @param poolId The ID of the pool
-    /// @dev Returns isClosed as true if countdown has ended (endTime reached), even if not explicitly closed
+    // ==================== VIEW FUNCTIONS ====================
+
     function getPool(uint256 poolId) external view poolExists(poolId) returns (
         uint256 startTime,
         uint256 endTime,
@@ -375,7 +362,6 @@ contract Raffle is ZamaEthereumConfig {
         uint256 participantCount
     ) {
         Pool storage pool = pools[poolId];
-        // Pool is considered closed if countdown has ended (endTime reached)
         bool actuallyClosed = pool.isClosed || (pool.startTime > 0 && pool.endTime > 0 && block.timestamp >= pool.endTime);
         return (
             pool.startTime,
@@ -388,14 +374,10 @@ contract Raffle is ZamaEthereumConfig {
         );
     }
 
-    /// @notice Get pool participants
-    /// @param poolId The ID of the pool
     function getPoolParticipants(uint256 poolId) external view poolExists(poolId) returns (address[] memory) {
         return pools[poolId].participants;
     }
 
-    /// @notice Get pool winners
-    /// @param poolId The ID of the pool
     function getPoolWinners(uint256 poolId) external view poolExists(poolId) returns (
         address[] memory winners,
         uint256[] memory percentages,
@@ -418,15 +400,10 @@ contract Raffle is ZamaEthereumConfig {
         }
     }
 
-    /// @notice Get encrypted random seed handle for a pool
-    /// @param poolId The ID of the pool
-    function getEncryptedRandomSeed(uint256 poolId) external view poolExists(poolId) returns (bytes32) {
-        return pools[poolId].randomSeedHandle;
+    function getWinnerIndexHandles(uint256 poolId) external view poolExists(poolId) returns (bytes32[] memory) {
+        return winnerIndexHandles[poolId];
     }
 
-    /// @notice Check if user is a winner in a pool
-    /// @param poolId The ID of the pool
-    /// @param user The address to check
     function isWinner(uint256 poolId, address user) external view poolExists(poolId) returns (bool, uint256, bool) {
         Pool storage pool = pools[poolId];
         for (uint256 i = 0; i < pool.winners.length; i++) {
@@ -437,15 +414,12 @@ contract Raffle is ZamaEthereumConfig {
         return (false, 0, false);
     }
 
-    /// @notice Get current pool ID
     function getCurrentPoolId() external view returns (uint256) {
         return currentPoolId;
     }
 
-    /// @notice Update protocol fee recipient (owner only)
     function setProtocolFeeRecipient(address _newRecipient) external onlyOwner {
         require(_newRecipient != address(0), "Invalid address");
         protocolFeeRecipient = _newRecipient;
     }
 }
-

@@ -37,13 +37,14 @@ export interface RaffleInterface extends Interface {
       | "currentPoolId"
       | "drawWinners"
       | "enterPool"
-      | "generateRandomSeed"
+      | "generateWinnerIndices"
       | "getCurrentPoolId"
-      | "getEncryptedRandomSeed"
       | "getPool"
       | "getPoolParticipants"
       | "getPoolWinners"
+      | "getWinnerIndexHandles"
       | "hasEnteredPool"
+      | "indicesGenerated"
       | "isWinner"
       | "mazaToken"
       | "owner"
@@ -51,6 +52,7 @@ export interface RaffleInterface extends Interface {
       | "pools"
       | "protocolFeeRecipient"
       | "setProtocolFeeRecipient"
+      | "winnerIndexHandles"
   ): FunctionFragment;
 
   getEvent(
@@ -60,9 +62,8 @@ export interface RaffleInterface extends Interface {
       | "PoolEntry"
       | "PoolStarted"
       | "ProtocolFeeWithdrawn"
-      | "PublicDecryptionVerified"
-      | "RandomSeedGenerated"
       | "RewardClaimed"
+      | "WinnerIndicesGenerated"
       | "WinnersDrawn"
   ): EventFragment;
 
@@ -101,20 +102,16 @@ export interface RaffleInterface extends Interface {
   ): string;
   encodeFunctionData(
     functionFragment: "drawWinners",
-    values: [BigNumberish, BytesLike, BytesLike]
+    values: [BigNumberish, BigNumberish[]]
   ): string;
   encodeFunctionData(functionFragment: "enterPool", values?: undefined): string;
   encodeFunctionData(
-    functionFragment: "generateRandomSeed",
+    functionFragment: "generateWinnerIndices",
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "getCurrentPoolId",
     values?: undefined
-  ): string;
-  encodeFunctionData(
-    functionFragment: "getEncryptedRandomSeed",
-    values: [BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "getPool",
@@ -129,8 +126,16 @@ export interface RaffleInterface extends Interface {
     values: [BigNumberish]
   ): string;
   encodeFunctionData(
+    functionFragment: "getWinnerIndexHandles",
+    values: [BigNumberish]
+  ): string;
+  encodeFunctionData(
     functionFragment: "hasEnteredPool",
     values: [BigNumberish, AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "indicesGenerated",
+    values: [BigNumberish]
   ): string;
   encodeFunctionData(
     functionFragment: "isWinner",
@@ -150,6 +155,10 @@ export interface RaffleInterface extends Interface {
   encodeFunctionData(
     functionFragment: "setProtocolFeeRecipient",
     values: [AddressLike]
+  ): string;
+  encodeFunctionData(
+    functionFragment: "winnerIndexHandles",
+    values: [BigNumberish, BigNumberish]
   ): string;
 
   decodeFunctionResult(functionFragment: "ENTRY_FEE", data: BytesLike): Result;
@@ -188,15 +197,11 @@ export interface RaffleInterface extends Interface {
   ): Result;
   decodeFunctionResult(functionFragment: "enterPool", data: BytesLike): Result;
   decodeFunctionResult(
-    functionFragment: "generateRandomSeed",
+    functionFragment: "generateWinnerIndices",
     data: BytesLike
   ): Result;
   decodeFunctionResult(
     functionFragment: "getCurrentPoolId",
-    data: BytesLike
-  ): Result;
-  decodeFunctionResult(
-    functionFragment: "getEncryptedRandomSeed",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "getPool", data: BytesLike): Result;
@@ -209,7 +214,15 @@ export interface RaffleInterface extends Interface {
     data: BytesLike
   ): Result;
   decodeFunctionResult(
+    functionFragment: "getWinnerIndexHandles",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
     functionFragment: "hasEnteredPool",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "indicesGenerated",
     data: BytesLike
   ): Result;
   decodeFunctionResult(functionFragment: "isWinner", data: BytesLike): Result;
@@ -226,6 +239,10 @@ export interface RaffleInterface extends Interface {
   ): Result;
   decodeFunctionResult(
     functionFragment: "setProtocolFeeRecipient",
+    data: BytesLike
+  ): Result;
+  decodeFunctionResult(
+    functionFragment: "winnerIndexHandles",
     data: BytesLike
   ): Result;
 }
@@ -331,38 +348,6 @@ export namespace ProtocolFeeWithdrawnEvent {
   export type LogDescription = TypedLogDescription<Event>;
 }
 
-export namespace PublicDecryptionVerifiedEvent {
-  export type InputTuple = [
-    handlesList: BytesLike[],
-    abiEncodedCleartexts: BytesLike
-  ];
-  export type OutputTuple = [
-    handlesList: string[],
-    abiEncodedCleartexts: string
-  ];
-  export interface OutputObject {
-    handlesList: string[];
-    abiEncodedCleartexts: string;
-  }
-  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
-  export type Filter = TypedDeferredTopicFilter<Event>;
-  export type Log = TypedEventLog<Event>;
-  export type LogDescription = TypedLogDescription<Event>;
-}
-
-export namespace RandomSeedGeneratedEvent {
-  export type InputTuple = [poolId: BigNumberish, randomSeedHandle: BytesLike];
-  export type OutputTuple = [poolId: bigint, randomSeedHandle: string];
-  export interface OutputObject {
-    poolId: bigint;
-    randomSeedHandle: string;
-  }
-  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
-  export type Filter = TypedDeferredTopicFilter<Event>;
-  export type Log = TypedEventLog<Event>;
-  export type LogDescription = TypedLogDescription<Event>;
-}
-
 export namespace RewardClaimedEvent {
   export type InputTuple = [
     poolId: BigNumberish,
@@ -374,6 +359,19 @@ export namespace RewardClaimedEvent {
     poolId: bigint;
     winner: string;
     amount: bigint;
+  }
+  export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
+  export type Filter = TypedDeferredTopicFilter<Event>;
+  export type Log = TypedEventLog<Event>;
+  export type LogDescription = TypedLogDescription<Event>;
+}
+
+export namespace WinnerIndicesGeneratedEvent {
+  export type InputTuple = [poolId: BigNumberish, handles: BytesLike[]];
+  export type OutputTuple = [poolId: bigint, handles: string[]];
+  export interface OutputObject {
+    poolId: bigint;
+    handles: string[];
   }
   export type Event = TypedContractEvent<InputTuple, OutputTuple, OutputObject>;
   export type Filter = TypedDeferredTopicFilter<Event>;
@@ -469,26 +467,20 @@ export interface Raffle extends BaseContract {
   currentPoolId: TypedContractMethod<[], [bigint], "view">;
 
   drawWinners: TypedContractMethod<
-    [poolId: BigNumberish, cleartexts: BytesLike, decryptionProof: BytesLike],
+    [poolId: BigNumberish, decryptedIndices: BigNumberish[]],
     [void],
     "nonpayable"
   >;
 
   enterPool: TypedContractMethod<[], [void], "nonpayable">;
 
-  generateRandomSeed: TypedContractMethod<
+  generateWinnerIndices: TypedContractMethod<
     [poolId: BigNumberish],
     [void],
     "nonpayable"
   >;
 
   getCurrentPoolId: TypedContractMethod<[], [bigint], "view">;
-
-  getEncryptedRandomSeed: TypedContractMethod<
-    [poolId: BigNumberish],
-    [string],
-    "view"
-  >;
 
   getPool: TypedContractMethod<
     [poolId: BigNumberish],
@@ -525,8 +517,20 @@ export interface Raffle extends BaseContract {
     "view"
   >;
 
+  getWinnerIndexHandles: TypedContractMethod<
+    [poolId: BigNumberish],
+    [string[]],
+    "view"
+  >;
+
   hasEnteredPool: TypedContractMethod<
     [arg0: BigNumberish, arg1: AddressLike],
+    [boolean],
+    "view"
+  >;
+
+  indicesGenerated: TypedContractMethod<
+    [arg0: BigNumberish],
     [boolean],
     "view"
   >;
@@ -550,19 +554,7 @@ export interface Raffle extends BaseContract {
   pools: TypedContractMethod<
     [arg0: BigNumberish],
     [
-      [
-        bigint,
-        bigint,
-        bigint,
-        bigint,
-        bigint,
-        boolean,
-        boolean,
-        string,
-        string,
-        boolean,
-        bigint
-      ] & {
+      [bigint, bigint, bigint, bigint, bigint, boolean, boolean] & {
         poolId: bigint;
         startTime: bigint;
         endTime: bigint;
@@ -570,10 +562,6 @@ export interface Raffle extends BaseContract {
         totalAmount: bigint;
         isClosed: boolean;
         winnersDrawn: boolean;
-        encryptedRandomSeed: string;
-        randomSeedHandle: string;
-        randomSeedRevealed: boolean;
-        revealedRandomSeed: bigint;
       }
     ],
     "view"
@@ -585,6 +573,12 @@ export interface Raffle extends BaseContract {
     [_newRecipient: AddressLike],
     [void],
     "nonpayable"
+  >;
+
+  winnerIndexHandles: TypedContractMethod<
+    [arg0: BigNumberish, arg1: BigNumberish],
+    [string],
+    "view"
   >;
 
   getFunction<T extends ContractMethod = ContractMethod>(
@@ -621,7 +615,7 @@ export interface Raffle extends BaseContract {
   getFunction(
     nameOrSignature: "drawWinners"
   ): TypedContractMethod<
-    [poolId: BigNumberish, cleartexts: BytesLike, decryptionProof: BytesLike],
+    [poolId: BigNumberish, decryptedIndices: BigNumberish[]],
     [void],
     "nonpayable"
   >;
@@ -629,14 +623,11 @@ export interface Raffle extends BaseContract {
     nameOrSignature: "enterPool"
   ): TypedContractMethod<[], [void], "nonpayable">;
   getFunction(
-    nameOrSignature: "generateRandomSeed"
+    nameOrSignature: "generateWinnerIndices"
   ): TypedContractMethod<[poolId: BigNumberish], [void], "nonpayable">;
   getFunction(
     nameOrSignature: "getCurrentPoolId"
   ): TypedContractMethod<[], [bigint], "view">;
-  getFunction(
-    nameOrSignature: "getEncryptedRandomSeed"
-  ): TypedContractMethod<[poolId: BigNumberish], [string], "view">;
   getFunction(
     nameOrSignature: "getPool"
   ): TypedContractMethod<
@@ -672,12 +663,18 @@ export interface Raffle extends BaseContract {
     "view"
   >;
   getFunction(
+    nameOrSignature: "getWinnerIndexHandles"
+  ): TypedContractMethod<[poolId: BigNumberish], [string[]], "view">;
+  getFunction(
     nameOrSignature: "hasEnteredPool"
   ): TypedContractMethod<
     [arg0: BigNumberish, arg1: AddressLike],
     [boolean],
     "view"
   >;
+  getFunction(
+    nameOrSignature: "indicesGenerated"
+  ): TypedContractMethod<[arg0: BigNumberish], [boolean], "view">;
   getFunction(
     nameOrSignature: "isWinner"
   ): TypedContractMethod<
@@ -703,19 +700,7 @@ export interface Raffle extends BaseContract {
   ): TypedContractMethod<
     [arg0: BigNumberish],
     [
-      [
-        bigint,
-        bigint,
-        bigint,
-        bigint,
-        bigint,
-        boolean,
-        boolean,
-        string,
-        string,
-        boolean,
-        bigint
-      ] & {
+      [bigint, bigint, bigint, bigint, bigint, boolean, boolean] & {
         poolId: bigint;
         startTime: bigint;
         endTime: bigint;
@@ -723,10 +708,6 @@ export interface Raffle extends BaseContract {
         totalAmount: bigint;
         isClosed: boolean;
         winnersDrawn: boolean;
-        encryptedRandomSeed: string;
-        randomSeedHandle: string;
-        randomSeedRevealed: boolean;
-        revealedRandomSeed: bigint;
       }
     ],
     "view"
@@ -737,6 +718,13 @@ export interface Raffle extends BaseContract {
   getFunction(
     nameOrSignature: "setProtocolFeeRecipient"
   ): TypedContractMethod<[_newRecipient: AddressLike], [void], "nonpayable">;
+  getFunction(
+    nameOrSignature: "winnerIndexHandles"
+  ): TypedContractMethod<
+    [arg0: BigNumberish, arg1: BigNumberish],
+    [string],
+    "view"
+  >;
 
   getEvent(
     key: "PoolClosed"
@@ -774,25 +762,18 @@ export interface Raffle extends BaseContract {
     ProtocolFeeWithdrawnEvent.OutputObject
   >;
   getEvent(
-    key: "PublicDecryptionVerified"
-  ): TypedContractEvent<
-    PublicDecryptionVerifiedEvent.InputTuple,
-    PublicDecryptionVerifiedEvent.OutputTuple,
-    PublicDecryptionVerifiedEvent.OutputObject
-  >;
-  getEvent(
-    key: "RandomSeedGenerated"
-  ): TypedContractEvent<
-    RandomSeedGeneratedEvent.InputTuple,
-    RandomSeedGeneratedEvent.OutputTuple,
-    RandomSeedGeneratedEvent.OutputObject
-  >;
-  getEvent(
     key: "RewardClaimed"
   ): TypedContractEvent<
     RewardClaimedEvent.InputTuple,
     RewardClaimedEvent.OutputTuple,
     RewardClaimedEvent.OutputObject
+  >;
+  getEvent(
+    key: "WinnerIndicesGenerated"
+  ): TypedContractEvent<
+    WinnerIndicesGeneratedEvent.InputTuple,
+    WinnerIndicesGeneratedEvent.OutputTuple,
+    WinnerIndicesGeneratedEvent.OutputObject
   >;
   getEvent(
     key: "WinnersDrawn"
@@ -858,28 +839,6 @@ export interface Raffle extends BaseContract {
       ProtocolFeeWithdrawnEvent.OutputObject
     >;
 
-    "PublicDecryptionVerified(bytes32[],bytes)": TypedContractEvent<
-      PublicDecryptionVerifiedEvent.InputTuple,
-      PublicDecryptionVerifiedEvent.OutputTuple,
-      PublicDecryptionVerifiedEvent.OutputObject
-    >;
-    PublicDecryptionVerified: TypedContractEvent<
-      PublicDecryptionVerifiedEvent.InputTuple,
-      PublicDecryptionVerifiedEvent.OutputTuple,
-      PublicDecryptionVerifiedEvent.OutputObject
-    >;
-
-    "RandomSeedGenerated(uint256,bytes32)": TypedContractEvent<
-      RandomSeedGeneratedEvent.InputTuple,
-      RandomSeedGeneratedEvent.OutputTuple,
-      RandomSeedGeneratedEvent.OutputObject
-    >;
-    RandomSeedGenerated: TypedContractEvent<
-      RandomSeedGeneratedEvent.InputTuple,
-      RandomSeedGeneratedEvent.OutputTuple,
-      RandomSeedGeneratedEvent.OutputObject
-    >;
-
     "RewardClaimed(uint256,address,uint256)": TypedContractEvent<
       RewardClaimedEvent.InputTuple,
       RewardClaimedEvent.OutputTuple,
@@ -889,6 +848,17 @@ export interface Raffle extends BaseContract {
       RewardClaimedEvent.InputTuple,
       RewardClaimedEvent.OutputTuple,
       RewardClaimedEvent.OutputObject
+    >;
+
+    "WinnerIndicesGenerated(uint256,bytes32[])": TypedContractEvent<
+      WinnerIndicesGeneratedEvent.InputTuple,
+      WinnerIndicesGeneratedEvent.OutputTuple,
+      WinnerIndicesGeneratedEvent.OutputObject
+    >;
+    WinnerIndicesGenerated: TypedContractEvent<
+      WinnerIndicesGeneratedEvent.InputTuple,
+      WinnerIndicesGeneratedEvent.OutputTuple,
+      WinnerIndicesGeneratedEvent.OutputObject
     >;
 
     "WinnersDrawn(uint256,address[],uint256[])": TypedContractEvent<

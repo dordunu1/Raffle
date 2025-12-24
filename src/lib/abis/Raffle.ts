@@ -1,8 +1,7 @@
 // Raffle Contract ABI
-// This file should be updated with the full ABI from artifacts/contracts/Raffle.sol/Raffle.json after compilation
+// Updated for new FHE pattern using FHE.allow() instead of makePubliclyDecryptable
 // To update: Run `npm run compile` then copy the "abi" array from artifacts/contracts/Raffle.sol/Raffle.json
 
-// Fallback ABI (replace with full ABI from compilation artifacts)
 export const RAFFLE_ABI = [
   {
     "inputs": [
@@ -160,25 +159,6 @@ export const RAFFLE_ABI = [
         "type": "uint256"
       },
       {
-        "indexed": false,
-        "internalType": "bytes32",
-        "name": "randomSeedHandle",
-        "type": "bytes32"
-      }
-    ],
-    "name": "RandomSeedGenerated",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "poolId",
-        "type": "uint256"
-      },
-      {
         "indexed": true,
         "internalType": "address",
         "name": "winner",
@@ -192,6 +172,25 @@ export const RAFFLE_ABI = [
       }
     ],
     "name": "RewardClaimed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "poolId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32[]",
+        "name": "handles",
+        "type": "bytes32[]"
+      }
+    ],
+    "name": "WinnerIndicesGenerated",
     "type": "event"
   },
   {
@@ -331,14 +330,9 @@ export const RAFFLE_ABI = [
         "type": "uint256"
       },
       {
-        "internalType": "bytes",
-        "name": "cleartexts",
-        "type": "bytes"
-      },
-      {
-        "internalType": "bytes",
-        "name": "decryptionProof",
-        "type": "bytes"
+        "internalType": "uint16[]",
+        "name": "decryptedIndices",
+        "type": "uint16[]"
       }
     ],
     "name": "drawWinners",
@@ -361,7 +355,7 @@ export const RAFFLE_ABI = [
         "type": "uint256"
       }
     ],
-    "name": "generateRandomSeed",
+    "name": "generateWinnerIndices",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -374,25 +368,6 @@ export const RAFFLE_ABI = [
         "internalType": "uint256",
         "name": "",
         "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "poolId",
-        "type": "uint256"
-      }
-    ],
-    "name": "getEncryptedRandomSeed",
-    "outputs": [
-      {
-        "internalType": "bytes32",
-        "name": "",
-        "type": "bytes32"
       }
     ],
     "stateMutability": "view",
@@ -504,6 +479,25 @@ export const RAFFLE_ABI = [
     "inputs": [
       {
         "internalType": "uint256",
+        "name": "poolId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getWinnerIndexHandles",
+    "outputs": [
+      {
+        "internalType": "bytes32[]",
+        "name": "",
+        "type": "bytes32[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
         "name": "",
         "type": "uint256"
       },
@@ -514,6 +508,25 @@ export const RAFFLE_ABI = [
       }
     ],
     "name": "hasEnteredPool",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "indicesGenerated",
     "outputs": [
       {
         "internalType": "bool",
@@ -652,26 +665,6 @@ export const RAFFLE_ABI = [
         "internalType": "bool",
         "name": "winnersDrawn",
         "type": "bool"
-      },
-      {
-        "internalType": "euint32",
-        "name": "encryptedRandomSeed",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "randomSeedHandle",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "bool",
-        "name": "randomSeedRevealed",
-        "type": "bool"
-      },
-      {
-        "internalType": "uint256",
-        "name": "revealedRandomSeed",
-        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -691,19 +684,6 @@ export const RAFFLE_ABI = [
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "protocolId",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "inputs": [
       {
         "internalType": "address",
@@ -715,6 +695,29 @@ export const RAFFLE_ABI = [
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "winnerIndexHandles",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
   }
 ] as const;
-

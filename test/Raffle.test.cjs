@@ -1,6 +1,7 @@
 const { expect } = require("chai");
-const { ethers } = require("hardhat");
+const { ethers, fhevm } = require("hardhat");
 const hre = require("hardhat");
+const { FhevmType } = require("@fhevm/hardhat-plugin");
 
 describe("Raffle - Comprehensive FHE Operations", function () {
   let raffleContract;
@@ -9,6 +10,7 @@ describe("Raffle - Comprehensive FHE Operations", function () {
 
   const ENTRY_FEE = ethers.parseEther("5"); // 5 MAZA tokens
   const POOL_DURATION = 300; // 5 minutes in seconds
+  const WINNER_COUNT = 5;
 
   beforeEach(async function () {
     if (!hre.fhevm.isMock) {
@@ -44,7 +46,7 @@ describe("Raffle - Comprehensive FHE Operations", function () {
     console.log("✅ Tokens distributed to participants");
   });
 
-  it("tests basic FHE operations: create pool, enter pool, generate seed, and draw winners", async function () {
+  it("tests basic FHE operations: create pool, enter pool, generate indices, and draw winners", async function () {
     console.log("Testing basic FHE raffle flow...");
 
     const poolId = 0n;
@@ -81,57 +83,68 @@ describe("Raffle - Comprehensive FHE Operations", function () {
     const poolAfterClose = await raffleContract.getPool(poolId);
     expect(poolAfterClose.isClosed).to.equal(true);
 
-    // Test 3: Generate encrypted random seed (tests FHE.randEuint32, FHE.allowThis, FHE.makePubliclyDecryptable, FHE.toBytes32)
-    console.log("Testing encrypted random seed generation...");
+    // Test 3: Generate encrypted winner indices (tests FHE.randEuint16, FHE.allowThis, FHE.allow, FHE.toBytes32)
+    console.log("Testing encrypted winner indices generation...");
 
-    const generateTx = await raffleContract.connect(owner).generateRandomSeed(poolId);
+    const generateTx = await raffleContract.connect(owner).generateWinnerIndices(poolId);
     const generateReceipt = await generateTx.wait();
 
-    // Get random seed handle from event
-    const randomSeedEvent = generateReceipt.logs.find(log => {
+    // Get handles from event
+    const indicesEvent = generateReceipt.logs.find(log => {
       try {
         const decoded = raffleContract.interface.parseLog(log);
-        return decoded && decoded.name === 'RandomSeedGenerated';
+        return decoded && decoded.name === 'WinnerIndicesGenerated';
       } catch {
         return false;
       }
     });
 
-    expect(randomSeedEvent).to.not.be.undefined;
-    const randomSeedHandle = randomSeedEvent.args.randomSeedHandle;
-    console.log(`✅ Random seed generated with handle: ${randomSeedHandle}`);
+    expect(indicesEvent).to.not.be.undefined;
+    const handles = indicesEvent.args.handles;
+    expect(handles.length).to.equal(WINNER_COUNT);
+    console.log(`✅ Winner indices generated with ${handles.length} handles`);
 
-    // Verify handle is stored
-    const storedHandle = await raffleContract.getEncryptedRandomSeed(poolId);
-    expect(storedHandle).to.equal(randomSeedHandle);
+    // Verify handles are stored
+    const storedHandles = await raffleContract.getWinnerIndexHandles(poolId);
+    expect(storedHandles.length).to.equal(WINNER_COUNT);
 
-    console.log("✅ FHE.randEuint32() - Random seed generation works");
-    console.log("✅ FHE.allowThis() - Decryption permissions work");
-    console.log("✅ FHE.makePubliclyDecryptable() - Public decryption enabled");
+    console.log("✅ FHE.randEuint16() - Random index generation works");
+    console.log("✅ FHE.allowThis() - Contract permissions work");
+    console.log("✅ FHE.allow() - Owner permissions work");
     console.log("✅ FHE.toBytes32() - Handle conversion works");
 
-    // Test 4: Decrypt random seed (tests FHE.verifySignatures)
-    console.log("Testing random seed decryption...");
+    // Test 4: Decrypt winner indices (owner has permission via FHE.allow)
+    console.log("Testing winner indices decryption...");
 
-    // In mock mode, use publicDecrypt to get cleartexts and proof
-    const decryptionResult = await hre.fhevm.publicDecrypt([randomSeedHandle]);
+    // Decrypt as owner using userDecryptEuint (owner has permission via FHE.allow)
+    const decryptedIndices = [];
+    const contractAddress = await raffleContract.getAddress();
     
-    expect(decryptionResult).to.not.be.undefined;
-    expect(decryptionResult.abiEncodedClearValues).to.not.be.undefined;
-    expect(decryptionResult.decryptionProof).to.not.be.undefined;
+    for (const handle of storedHandles) {
+      // Get the encrypted euint16 value from contract
+      // Note: We need to get the actual encrypted value, not just the handle
+      // For now, we'll use the handle directly with userDecryptEuint
+      const encryptedValue = handle; // In test, handle is the encrypted value
+      
+      // Use userDecryptEuint with owner signer (EIP-712 signing)
+      const decryptedValue = await fhevm.userDecryptEuint(
+        FhevmType.euint16,
+        encryptedValue,
+        contractAddress,
+        owner
+      );
+      
+      decryptedIndices.push(Number(decryptedValue));
+    }
+    
+    console.log(`✅ Decrypted ${decryptedIndices.length} winner indices:`, decryptedIndices);
 
-    const cleartexts = decryptionResult.abiEncodedClearValues;
-    const decryptionProof = decryptionResult.decryptionProof;
-
-    console.log("✅ Decryption oracle provided cleartexts and proof");
-
-    // Test 5: Draw winners (tests FHE.verifySignatures, winner selection algorithm)
+    // Test 5: Draw winners with decrypted indices
     console.log("Testing winner drawing...");
 
     const drawTx = await raffleContract.connect(owner).drawWinners(
       poolId,
-      cleartexts,
-      decryptionProof
+      decryptedIndices
     );
     await drawTx.wait();
 
@@ -145,7 +158,6 @@ describe("Raffle - Comprehensive FHE Operations", function () {
     expect(percentages.length).to.equal(5);
     expect(rewards.length).to.equal(5);
 
-    console.log("✅ FHE.verifySignatures() - Decryption proof verification works");
     console.log("✅ Winner selection algorithm works");
     console.log(`✅ ${winners.length} winners selected`);
 
@@ -157,12 +169,12 @@ describe("Raffle - Comprehensive FHE Operations", function () {
     console.log("✅ Protocol fee distribution works");
   });
 
-  it("tests FHE error handling: invalid proofs and double entry", async function () {
+  it("tests FHE error handling: double entry and invalid state", async function () {
     console.log("Testing FHE error handling...");
 
     const poolId = 0n;
 
-    // Enter 5 participants (required for generating random seed) BEFORE closing pool
+    // Enter 5 participants (required for generating indices) BEFORE closing pool
     const participants = [participant1, participant2, participant3, participant4, participant5];
     for (let i = 0; i < participants.length; i++) {
       await mazaToken.connect(participants[i]).approve(await raffleContract.getAddress(), ENTRY_FEE);
@@ -174,34 +186,37 @@ describe("Raffle - Comprehensive FHE Operations", function () {
     await ethers.provider.send("evm_mine", []);
     await raffleContract.connect(owner).closePool(poolId);
 
-    // Generate random seed
-    await raffleContract.connect(owner).generateRandomSeed(poolId);
+    // Generate winner indices
+    await raffleContract.connect(owner).generateWinnerIndices(poolId);
 
-    const randomSeedHandle = await raffleContract.getEncryptedRandomSeed(poolId);
-    const validDecryption = await hre.fhevm.publicDecrypt([randomSeedHandle]);
+    const handles = await raffleContract.getWinnerIndexHandles(poolId);
 
-    // Test 1: Invalid decryption proof should revert
-    console.log("Testing invalid decryption proof...");
-    const invalidProof = "0x" + "00".repeat(64); // Invalid proof
+    // Decrypt indices using userDecryptEuint (owner has permission via FHE.allow)
+    const decryptedIndices = [];
+    const contractAddress = await raffleContract.getAddress();
+    
+    for (const handle of handles) {
+      const decryptedValue = await fhevm.userDecryptEuint(
+        FhevmType.euint16,
+        handle,
+        contractAddress,
+        owner
+      );
+      decryptedIndices.push(Number(decryptedValue));
+    }
 
+    // Test 1: Invalid indices count should revert
+    console.log("Testing invalid indices count...");
     await expect(
-      raffleContract.connect(owner).drawWinners(
-        poolId,
-        validDecryption.abiEncodedClearValues,
-        invalidProof
-      )
-    ).to.be.reverted; // FHE.verifySignatures should fail with invalid proof
+      raffleContract.connect(owner).drawWinners(poolId, [1, 2, 3]) // Only 3 instead of 5
+    ).to.be.revertedWith("Invalid indices count");
 
-    console.log("✅ FHE.verifySignatures() correctly rejects invalid proofs");
+    console.log("✅ Invalid indices count correctly rejected");
 
-    // Test 2: Valid proof should work
-    await raffleContract.connect(owner).drawWinners(
-      poolId,
-      validDecryption.abiEncodedClearValues,
-      validDecryption.decryptionProof
-    );
+    // Test 2: Valid indices should work
+    await raffleContract.connect(owner).drawWinners(poolId, decryptedIndices);
 
-    console.log("✅ FHE.verifySignatures() accepts valid proofs");
+    console.log("✅ Valid indices accepted");
 
     // Test 3: Double entry should revert (try to enter pool 1, which should be auto-created)
     const pool1Id = 1n;
@@ -215,12 +230,12 @@ describe("Raffle - Comprehensive FHE Operations", function () {
     console.log("✅ Double entry prevention works");
   });
 
-  it("tests FHE operations with edge cases: minimum participants and maximum pool size", async function () {
+  it("tests FHE operations with edge cases: minimum participants", async function () {
     console.log("Testing FHE edge cases...");
 
     const poolId = 0n;
 
-    // Test 1: Cannot draw winners with less than 5 participants
+    // Test 1: Cannot generate indices with less than 5 participants
     console.log("Testing minimum participants requirement...");
 
     // Enter only 4 participants
@@ -235,25 +250,12 @@ describe("Raffle - Comprehensive FHE Operations", function () {
     await ethers.provider.send("evm_mine", []);
     await raffleContract.connect(owner).closePool(poolId);
 
-    // Should revert when trying to generate seed with < 5 participants
+    // Should revert when trying to generate indices with < 5 participants
     await expect(
-      raffleContract.connect(owner).generateRandomSeed(poolId)
+      raffleContract.connect(owner).generateWinnerIndices(poolId)
     ).to.be.revertedWith("Not enough participants");
 
     console.log("✅ Minimum participants requirement enforced");
-
-    // Test 2: Add 5th participant and test with exactly 5
-    await mazaToken.connect(participant5).approve(await raffleContract.getAddress(), ENTRY_FEE);
-    await raffleContract.connect(participant5).enterPool();
-
-    // Close pool again (need to create new pool or reopen)
-    // Actually, we need to create a new pool since current one is closed
-    // Let's test with a fresh pool by entering participant6 to trigger new pool creation
-    // But first, let's test the current pool with 5 participants
-
-    // Actually, the pool is already closed, so we need to work with what we have
-    // For this test, let's create a new scenario with exactly 5 participants from the start
-    console.log("✅ Edge case: Minimum participants (5) works correctly");
   });
 
   it("tests complex FHE computation chains: multiple pools and entries", async function () {
@@ -274,14 +276,22 @@ describe("Raffle - Comprehensive FHE Operations", function () {
     await ethers.provider.send("evm_mine", []);
     await raffleContract.connect(owner).closePool(poolId);
 
-    await raffleContract.connect(owner).generateRandomSeed(poolId);
-    const handle0 = await raffleContract.getEncryptedRandomSeed(poolId);
-    const decryption0 = await hre.fhevm.publicDecrypt([handle0]);
-    await raffleContract.connect(owner).drawWinners(
-      poolId,
-      decryption0.abiEncodedClearValues,
-      decryption0.decryptionProof
-    );
+    await raffleContract.connect(owner).generateWinnerIndices(poolId);
+    const handles0 = await raffleContract.getWinnerIndexHandles(poolId);
+    
+    const decryptedIndices0 = [];
+    for (const handle of handles0) {
+      const contractAddress = await raffleContract.getAddress();
+      const decryptedValue = await fhevm.userDecryptEuint(
+        FhevmType.euint16,
+        handle,
+        contractAddress,
+        owner
+      );
+      decryptedIndices0.push(Number(decryptedValue));
+    }
+    
+    await raffleContract.connect(owner).drawWinners(poolId, decryptedIndices0);
 
     console.log("✅ Pool 0 completed");
 
@@ -298,14 +308,22 @@ describe("Raffle - Comprehensive FHE Operations", function () {
     await ethers.provider.send("evm_mine", []);
     await raffleContract.connect(owner).closePool(poolId);
 
-    await raffleContract.connect(owner).generateRandomSeed(poolId);
-    const handle1 = await raffleContract.getEncryptedRandomSeed(poolId);
-    const decryption1 = await hre.fhevm.publicDecrypt([handle1]);
-    await raffleContract.connect(owner).drawWinners(
-      poolId,
-      decryption1.abiEncodedClearValues,
-      decryption1.decryptionProof
-    );
+    await raffleContract.connect(owner).generateWinnerIndices(poolId);
+    const handles1 = await raffleContract.getWinnerIndexHandles(poolId);
+    
+    const decryptedIndices1 = [];
+    for (const handle of handles1) {
+      const contractAddress = await raffleContract.getAddress();
+      const decryptedValue = await fhevm.userDecryptEuint(
+        FhevmType.euint16,
+        handle,
+        contractAddress,
+        owner
+      );
+      decryptedIndices1.push(Number(decryptedValue));
+    }
+    
+    await raffleContract.connect(owner).drawWinners(poolId, decryptedIndices1);
 
     console.log("✅ Pool 1 completed");
 
@@ -321,12 +339,12 @@ describe("Raffle - Comprehensive FHE Operations", function () {
     console.log("✅ FHE state management across pools works");
   });
 
-  it("tests FHE access control: only owner can generate seed and draw winners", async function () {
+  it("tests FHE access control: only owner can generate indices and draw winners", async function () {
     console.log("Testing FHE access control...");
 
     const poolId = 0n;
 
-    // Enter 5 participants (required for generating random seed)
+    // Enter 5 participants (required for generating indices)
     const participants = [participant1, participant2, participant3, participant4, participant5];
     for (let i = 0; i < participants.length; i++) {
       await mazaToken.connect(participants[i]).approve(await raffleContract.getAddress(), ENTRY_FEE);
@@ -338,38 +356,41 @@ describe("Raffle - Comprehensive FHE Operations", function () {
     await ethers.provider.send("evm_mine", []);
     await raffleContract.connect(owner).closePool(poolId);
 
-    // Test: Non-owner cannot generate random seed
+    // Test: Non-owner cannot generate indices
     await expect(
-      raffleContract.connect(participant1).generateRandomSeed(poolId)
+      raffleContract.connect(participant1).generateWinnerIndices(poolId)
     ).to.be.revertedWith("Only owner can call this function");
 
-    console.log("✅ Access control prevents unauthorized seed generation");
+    console.log("✅ Access control prevents unauthorized indices generation");
 
-    // Test: Owner can generate random seed
-    await raffleContract.connect(owner).generateRandomSeed(poolId);
+    // Test: Owner can generate indices
+    await raffleContract.connect(owner).generateWinnerIndices(poolId);
 
-    const handle = await raffleContract.getEncryptedRandomSeed(poolId);
-    const decryption = await hre.fhevm.publicDecrypt([handle]);
+    const handles = await raffleContract.getWinnerIndexHandles(poolId);
+    
+    const decryptedIndices = [];
+    for (const handle of handles) {
+      const contractAddress = await raffleContract.getAddress();
+      const decryptedValue = await fhevm.userDecryptEuint(
+        FhevmType.euint16,
+        handle,
+        contractAddress,
+        owner
+      );
+      decryptedIndices.push(Number(decryptedValue));
+    }
 
     // Test: Non-owner cannot draw winners
     await expect(
-      raffleContract.connect(participant1).drawWinners(
-        poolId,
-        decryption.abiEncodedClearValues,
-        decryption.decryptionProof
-      )
+      raffleContract.connect(participant1).drawWinners(poolId, decryptedIndices)
     ).to.be.revertedWith("Only owner can call this function");
 
     console.log("✅ Access control prevents unauthorized winner drawing");
 
     // Test: Owner can draw winners
-    await raffleContract.connect(owner).drawWinners(
-      poolId,
-      decryption.abiEncodedClearValues,
-      decryption.decryptionProof
-    );
+    await raffleContract.connect(owner).drawWinners(poolId, decryptedIndices);
 
-    console.log("✅ Owner can successfully generate seed and draw winners");
+    console.log("✅ Owner can successfully generate indices and draw winners");
   });
 
   it("tests FHE event emissions: all events are properly emitted", async function () {
@@ -427,31 +448,38 @@ describe("Raffle - Comprehensive FHE Operations", function () {
     expect(poolClosedEvent).to.not.be.undefined;
     console.log("✅ PoolClosed event emitted correctly");
 
-    // Test RandomSeedGenerated event (we already have 5 participants)
-    const generateTx = await raffleContract.connect(owner).generateRandomSeed(poolId);
+    // Test WinnerIndicesGenerated event
+    const generateTx = await raffleContract.connect(owner).generateWinnerIndices(poolId);
     const generateReceipt = await generateTx.wait();
 
-    const randomSeedEvent = generateReceipt.logs.find(log => {
+    const indicesEvent = generateReceipt.logs.find(log => {
       try {
         const decoded = raffleContract.interface.parseLog(log);
-        return decoded && decoded.name === 'RandomSeedGenerated';
+        return decoded && decoded.name === 'WinnerIndicesGenerated';
       } catch {
         return false;
       }
     });
 
-    expect(randomSeedEvent).to.not.be.undefined;
-    console.log("✅ RandomSeedGenerated event emitted correctly");
+    expect(indicesEvent).to.not.be.undefined;
+    console.log("✅ WinnerIndicesGenerated event emitted correctly");
 
     // Test WinnersDrawn event
-    const handle = await raffleContract.getEncryptedRandomSeed(poolId);
-    const decryption = await hre.fhevm.publicDecrypt([handle]);
+    const handles = await raffleContract.getWinnerIndexHandles(poolId);
+    
+    const decryptedIndices = [];
+    for (const handle of handles) {
+      const contractAddress = await raffleContract.getAddress();
+      const decryptedValue = await fhevm.userDecryptEuint(
+        FhevmType.euint16,
+        handle,
+        contractAddress,
+        owner
+      );
+      decryptedIndices.push(Number(decryptedValue));
+    }
 
-    const drawTx = await raffleContract.connect(owner).drawWinners(
-      poolId,
-      decryption.abiEncodedClearValues,
-      decryption.decryptionProof
-    );
+    const drawTx = await raffleContract.connect(owner).drawWinners(poolId, decryptedIndices);
     const drawReceipt = await drawTx.wait();
 
     const winnersDrawnEvent = drawReceipt.logs.find(log => {
@@ -521,14 +549,22 @@ describe("Raffle - Comprehensive FHE Operations", function () {
     await ethers.provider.send("evm_mine", []);
     await raffleContract.connect(owner).closePool(poolId);
 
-    await raffleContract.connect(owner).generateRandomSeed(poolId);
-    const handle = await raffleContract.getEncryptedRandomSeed(poolId);
-    const decryption = await hre.fhevm.publicDecrypt([handle]);
-    await raffleContract.connect(owner).drawWinners(
-      poolId,
-      decryption.abiEncodedClearValues,
-      decryption.decryptionProof
-    );
+    await raffleContract.connect(owner).generateWinnerIndices(poolId);
+    const handles = await raffleContract.getWinnerIndexHandles(poolId);
+    
+    const decryptedIndices = [];
+    for (const handle of handles) {
+      const contractAddress = await raffleContract.getAddress();
+      const decryptedValue = await fhevm.userDecryptEuint(
+        FhevmType.euint16,
+        handle,
+        contractAddress,
+        owner
+      );
+      decryptedIndices.push(Number(decryptedValue));
+    }
+    
+    await raffleContract.connect(owner).drawWinners(poolId, decryptedIndices);
 
     // Get winners
     const [winners, , rewards] = await raffleContract.getPoolWinners(poolId);
@@ -569,4 +605,3 @@ describe("Raffle - Comprehensive FHE Operations", function () {
     console.log("✅ Double claiming prevention works");
   });
 });
-

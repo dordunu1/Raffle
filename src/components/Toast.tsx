@@ -23,14 +23,30 @@ function getUserFriendlyError(message: string): string {
     return 'You have already entered this pool. Each address can only enter once per pool.';
   }
   
-  // Network errors
-  if (lowerMessage.includes('network') || lowerMessage.includes('connection')) {
+  // Network errors (but not FHE decryption service errors)
+  if ((lowerMessage.includes('network') || lowerMessage.includes('connection')) && 
+      !lowerMessage.includes('decryption') && 
+      !lowerMessage.includes('fhe') && 
+      !lowerMessage.includes('relayer')) {
     return 'Network error. Please check your internet connection and try again.';
   }
   
-  // Insufficient funds
-  if (lowerMessage.includes('insufficient') || lowerMessage.includes('balance')) {
+  // FHE decryption service errors
+  if (lowerMessage.includes('decryption service') || 
+      (lowerMessage.includes('cannot reach') && lowerMessage.includes('decryption'))) {
+    return 'FHE decryption service is unavailable. Please check your connection and try again.';
+  }
+  
+  // Insufficient funds - but only if it's actually about balance
+  // Don't match if it's about gas or other specific errors
+  if ((lowerMessage.includes('insufficient') && lowerMessage.includes('balance')) ||
+      (lowerMessage.includes('insufficient funds') && lowerMessage.includes('eth'))) {
     return 'Insufficient balance. Please check your wallet and try again.';
+  }
+  
+  // Gas-related errors
+  if (lowerMessage.includes('insufficient funds') && lowerMessage.includes('gas')) {
+    return 'Insufficient ETH for gas fees. Please add ETH to your wallet.';
   }
   
   // Gas errors

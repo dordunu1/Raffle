@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ethers } from 'ethers';
-import { publicDecryptWithProof } from '../lib/fhevm';
+import { userDecryptBatch } from '../lib/fhevm';
 import { ToastContainer, useToast } from './Toast';
 import { RAFFLE_ABI } from '../lib/abis/Raffle';
 import { ERC20_ABI } from '../lib/abis/ERC20';
@@ -40,8 +40,8 @@ interface WinnerData {
 interface PastPoolData extends PoolData {
   winners?: WinnerData[];
   userWinnerInfo?: { isWinner: boolean; reward: bigint; claimed: boolean };
-  revealedRandomSeed?: bigint;
-  randomSeedHandle?: string;
+  winnerIndexHandles?: string[];
+  indicesGenerated?: boolean;
 }
 
 export default function FheRaffle({ account, chainId, isConnected, fhevmStatus }: FheRaffleProps) {
@@ -498,30 +498,53 @@ export default function FheRaffle({ account, chainId, isConnected, fhevmStatus }
       
       const poolResults = await Promise.all(poolPromises);
       
-      // Step 2: Filter pools that exist and have winners drawn, then load winners data in parallel
+      // Step 2: Load data for pools with winners AND pools that are closed but not drawn
       const poolsWithWinners = poolResults.filter(
         (result) => result.success && result.pool && result.pool.winnersDrawn
       );
       
+      // Also check for pools that are closed but not drawn (need to check if indices are generated)
+      const poolsNotDrawn = poolResults.filter(
+        (result) => result.success && result.pool && result.pool.isClosed && !result.pool.winnersDrawn && result.pool.totalEntries >= 5n
+      );
+      
+      // Check indicesGenerated for pools not drawn
+      const indicesPromises = poolsNotDrawn.map(async (result) => {
+        try {
+          const indicesGenerated = await contract.indicesGenerated(result.poolId);
+          return {
+            poolId: result.poolId,
+            indicesGenerated,
+          };
+        } catch (error) {
+          return {
+            poolId: result.poolId,
+            indicesGenerated: false,
+          };
+        }
+      });
+      
+      const indicesResults = await Promise.all(indicesPromises);
+      
       const winnersPromises = poolsWithWinners.map(async (result) => {
         try {
-          const [winnersData, randomSeedHandle, userWinnerResult] = await Promise.all([
+          const [winnersData, winnerIndexHandles, userWinnerResult] = await Promise.all([
             contract.getPoolWinners(result.poolId),
-            contract.getEncryptedRandomSeed(result.poolId).catch(() => null),
+            contract.getWinnerIndexHandles(result.poolId).catch(() => null),
             account ? contract.isWinner(result.poolId, account).catch(() => null) : Promise.resolve(null),
           ]);
           
           return {
             poolId: result.poolId,
             winnersData,
-            randomSeedHandle,
+            winnerIndexHandles,
             userWinnerResult,
           };
         } catch (error) {
           return {
             poolId: result.poolId,
             winnersData: null,
-            randomSeedHandle: null,
+            winnerIndexHandles: null,
             userWinnerResult: null,
           };
         }
@@ -562,8 +585,8 @@ export default function FheRaffle({ account, chainId, isConnected, fhevmStatus }
           claimed: winnersResult.winnersData[3][idx],
         }));
         
-        if (winnersResult.randomSeedHandle) {
-          poolData.randomSeedHandle = ethers.hexlify(winnersResult.randomSeedHandle);
+        if (winnersResult.winnerIndexHandles && winnersResult.winnerIndexHandles.length > 0) {
+          poolData.winnerIndexHandles = winnersResult.winnerIndexHandles.map((h: string) => ethers.hexlify(h));
         }
         
         if (winnersResult.userWinnerResult) {
@@ -572,6 +595,14 @@ export default function FheRaffle({ account, chainId, isConnected, fhevmStatus }
             reward: winnersResult.userWinnerResult[1],
             claimed: winnersResult.userWinnerResult[2],
           };
+        }
+      });
+      
+      // Add indicesGenerated info to pools not drawn
+      indicesResults.forEach((indicesResult) => {
+        const poolData = poolsMap.get(indicesResult.poolId);
+        if (poolData) {
+          poolData.indicesGenerated = indicesResult.indicesGenerated;
         }
       });
       
@@ -713,8 +744,16 @@ export default function FheRaffle({ account, chainId, isConnected, fhevmStatus }
     }
   };
 
-  // Automated draw winners flow (combines generateRandomSeed and drawWinners)
-  const handleDrawWinners = async () => {
+  // Automated draw winners flow (combines generateWinnerIndices and drawWinners)
+  // Uses proper FHE pattern: FHE.allow() instead of makePubliclyDecryptable
+  const handleDrawWinners = async (poolIdOrEvent?: number | React.MouseEvent) => {
+    // Handle case where event object is accidentally passed
+    if (poolIdOrEvent && typeof poolIdOrEvent !== 'number') {
+      console.warn('⚠️ Event object passed to handleDrawWinners, using currentPoolId instead');
+      poolIdOrEvent = undefined;
+    }
+    const targetPoolId = (poolIdOrEvent !== undefined && typeof poolIdOrEvent === 'number') ? poolIdOrEvent : currentPoolId;
+    
     if (!contractAddress) {
       addToast('Contract address not configured', 'error');
       return;
@@ -744,34 +783,57 @@ export default function FheRaffle({ account, chainId, isConnected, fhevmStatus }
       const signer = await provider.getSigner();
       const contract = new ethers.Contract(contractAddress, RAFFLE_ABI, signer);
 
-      // Step 1: Generate random seed
-      updateToast(toastId, 'Step 1/3: Please sign to generate random seed', 'loading');
-      const generateTx = await contract.generateRandomSeed(currentPoolId);
+      // Check if indices are already generated
+      const indicesGenerated = await contract.indicesGenerated(targetPoolId);
       
-      updateToast(toastId, 'Step 1/3: Transaction submitted. Waiting for confirmation...', 'info');
-      await generateTx.wait();
-
-      // Step 2: Get handle from event or contract
-      updateToast(toastId, 'Step 2/3: Fetching encrypted random seed...', 'loading');
-      const handle = await contract.getEncryptedRandomSeed(currentPoolId);
-      
-      if (handle === '0x0000000000000000000000000000000000000000000000000000000000000000') {
-        throw new Error('Random seed handle not found');
+      // Step 1: Generate encrypted winner indices (if not already generated)
+      if (!indicesGenerated) {
+        updateToast(toastId, 'Step 1/3: Please sign to generate encrypted winner indices', 'loading');
+        const generateTx = await contract.generateWinnerIndices(targetPoolId);
+        
+        updateToast(toastId, 'Step 1/3: Transaction submitted. Waiting for confirmation...', 'info');
+        await generateTx.wait();
+      } else {
+        updateToast(toastId, 'Indices already generated, proceeding to decryption...', 'info');
       }
 
-      // Step 3: Decrypt with proof
-      updateToast(toastId, 'Step 2/3: Decrypting random seed (this may take a moment)...', 'loading');
-      const { cleartexts, decryptionProof } = await publicDecryptWithProof(handle);
+      // Step 2: Get handles from contract (now returns bytes32[] for 5 winner indices)
+      updateToast(toastId, 'Step 2/3: Fetching encrypted winner indices...', 'loading');
+      const handles: string[] = await contract.getWinnerIndexHandles(targetPoolId);
+      
+      if (!handles || handles.length === 0) {
+        throw new Error('Winner index handles not found');
+      }
 
-      // Step 4: Submit drawWinners transaction
-      updateToast(toastId, 'Step 3/3: Please sign to submit decrypted seed and draw winners', 'loading');
-      const drawTx = await contract.drawWinners(currentPoolId, cleartexts, decryptionProof);
+      // Step 3: Batch decrypt all handles with ONE EIP-712 signature (much better UX!)
+      updateToast(toastId, `Step 2/3: Batch decrypting ${handles.length} winner indices (please sign EIP-712 once)...`, 'loading');
+      
+      // Ensure FHE instance is ready before decrypting
+      if (fhevmStatus !== 'ready') {
+        throw new Error('FHEVM not initialized. Please wait for initialization to complete.');
+      }
+      
+      // Use batch userDecrypt - only ONE EIP-712 signature needed for all handles!
+      let decryptedIndices;
+      try {
+        decryptedIndices = await userDecryptBatch(handles, contractAddress, signer);
+        console.log('Decrypted winner indices:', decryptedIndices);
+      } catch (decryptError: any) {
+        // Re-throw with more context if it's a decryption-specific error
+        const errorMsg = decryptError?.message || decryptError?.toString() || 'Unknown decryption error';
+        console.error('❌ Batch decryption failed:', decryptError);
+        throw new Error(`Failed to decrypt winner indices: ${errorMsg}`);
+      }
+
+      // Step 4: Submit drawWinners transaction with decrypted indices
+      updateToast(toastId, 'Step 3/3: Please sign to submit decrypted indices and draw winners', 'loading');
+      const drawTx = await contract.drawWinners(targetPoolId, decryptedIndices);
 
       updateToast(toastId, 'Step 3/3: Transaction submitted. Waiting for confirmation...', 'info');
       await drawTx.wait();
 
       // Load winners immediately
-      await loadWinners(currentPoolId, contract);
+      await loadWinners(targetPoolId, contract);
       
       // Start animation
       setShowDrawAnimation(true);
@@ -781,13 +843,42 @@ export default function FheRaffle({ account, chainId, isConnected, fhevmStatus }
       
       // Reload all contract data after animation
       await loadContractData();
+      
+      // If drawing a past pool, reload past pools to update UI
+      if (poolIdOrEvent !== undefined && typeof poolIdOrEvent === 'number' && poolIdOrEvent !== currentPoolId) {
+        await loadPastPools(currentPoolId, contract, false);
+      }
     } catch (error: any) {
       removeToast(toastId);
       const errorMessage = error?.message || error?.toString() || 'Unknown error';
-      if (errorMessage.includes('User rejected') || errorMessage.includes('user denied') || errorMessage.includes('rejected')) {
+      const lowerErrorMessage = errorMessage.toLowerCase();
+      
+      // Log the actual error for debugging
+      console.error('❌ Draw winners error:', error);
+      console.error('❌ Error message:', errorMessage);
+      
+      if (lowerErrorMessage.includes('user rejected') || lowerErrorMessage.includes('user denied') || lowerErrorMessage.includes('rejected')) {
         addToast('Transaction cancelled. You can try again when ready.', 'warning');
+      } else if (lowerErrorMessage.includes('fhe instance not initialized') || lowerErrorMessage.includes('fhevm not initialized')) {
+        addToast('FHEVM not ready. Please wait for initialization or refresh the page.', 'error');
+        console.error('FHEVM initialization issue:', error);
+      } else if (lowerErrorMessage.includes('insufficient funds') || 
+                 (lowerErrorMessage.includes('insufficient') && lowerErrorMessage.includes('eth'))) {
+        // Only show balance error if it's actually about ETH balance (gas)
+        addToast('Insufficient ETH for gas fees. Please add ETH to your wallet.', 'error');
+      } else if (lowerErrorMessage.includes('pool must be closed') || lowerErrorMessage.includes('pool is not closed')) {
+        addToast('Pool must be closed before drawing winners.', 'error');
+      } else if (lowerErrorMessage.includes('winners already drawn')) {
+        addToast('Winners have already been drawn for this pool.', 'error');
+      } else if (lowerErrorMessage.includes('indices not generated')) {
+        addToast('Winner indices must be generated first. Please try again.', 'error');
+      } else if (lowerErrorMessage.includes('not enough participants')) {
+        addToast('Not enough participants to draw winners. Need at least 5 entries.', 'error');
+      } else if (lowerErrorMessage.includes('invalid indices count')) {
+        addToast('Invalid number of winner indices. Expected 5 indices.', 'error');
       } else {
-        addToast(`Failed to draw winners: ${errorMessage}`, 'error');
+        // Show the actual error message (Toast component will format it)
+        addToast(`Failed to draw winners: ${errorMessage.substring(0, 200)}`, 'error');
       }
     } finally {
       setIsDrawingWinners(false);
@@ -1264,25 +1355,19 @@ export default function FheRaffle({ account, chainId, isConnected, fhevmStatus }
                       {/* Expanded Content - Winners Details */}
                       {isExpanded && hasWinners && (
                           <div className="px-3 md:px-4 pb-3 md:pb-4 pt-3 md:pt-4 border-t-4 border-[#EA580C]">
-                            {/* Random Seed Information */}
-                            {pool.randomSeedHandle && (
+                            {/* FHE Winner Index Information */}
+                            {pool.winnerIndexHandles && pool.winnerIndexHandles.length > 0 && (
                               <div className="mb-4 md:mb-6 p-3 md:p-4 bg-white border-4 border-[#EA580C] rounded-lg">
-                                <p className="text-[#EA580C] font-black text-sm md:text-lg mb-2 md:mb-3">Random Seed Information</p>
+                                <p className="text-[#EA580C] font-black text-sm md:text-lg mb-2 md:mb-3">FHE Winner Index Handles</p>
                                 <div className="space-y-2">
-                                  <div>
-                                    <span className="text-xs md:text-sm font-bold text-gray-700">Ciphertext (Handle):</span>
-                                    <p className="text-xs md:text-sm font-mono text-[#EA580C] break-all mt-1">
-                                      {pool.randomSeedHandle}
-                                    </p>
-                                  </div>
-                                  {pool.revealedRandomSeed !== undefined && (
-                                    <div>
-                                      <span className="text-xs md:text-sm font-bold text-gray-700">Revealed Random Number:</span>
+                                  {pool.winnerIndexHandles.map((handle, idx) => (
+                                    <div key={idx}>
+                                      <span className="text-xs md:text-sm font-bold text-gray-700">Winner {idx + 1} Handle:</span>
                                       <p className="text-xs md:text-sm font-mono text-[#EA580C] break-all mt-1">
-                                        {pool.revealedRandomSeed.toString()}
+                                        {handle}
                                       </p>
                                     </div>
-                                  )}
+                                  ))}
                                 </div>
                               </div>
                             )}
@@ -1372,6 +1457,31 @@ export default function FheRaffle({ account, chainId, isConnected, fhevmStatus }
                             <p className="text-gray-700 text-sm md:text-lg text-center py-2 md:py-3 font-bold">
                             {pool.isClosed ? 'Winners not drawn yet' : 'Pool still active'}
                           </p>
+                            {/* Draw Winners Button for Owner */}
+                            {isOwner && pool.isClosed && !pool.winnersDrawn && pool.totalEntries >= 5n && (
+                              <div className="mt-4 flex justify-center">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDrawWinners(pool.poolId);
+                                  }}
+                                  disabled={isDrawingWinners || fhevmStatus !== 'ready'}
+                                  className="px-4 md:px-6 py-2 md:py-3 bg-[#EA580C] text-white font-black text-sm md:text-base rounded-lg border-4 border-[#C2410C] hover:bg-[#C2410C] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-[2px_2px_0px_0px_rgba(194,65,12,0.8)] hover:shadow-[3px_3px_0px_0px_rgba(194,65,12,0.8)] flex items-center gap-2"
+                                >
+                                  {isDrawingWinners ? (
+                                    <>
+                                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                                      Drawing...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Crown className="w-4 h-4 md:w-5 md:h-5" />
+                                      Draw Winners
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                            )}
                         </div>
                       )}
                     </div>
@@ -1393,7 +1503,7 @@ export default function FheRaffle({ account, chainId, isConnected, fhevmStatus }
             {poolData.totalEntries >= 5n ? (
               <>
                 <button
-                  onClick={handleDrawWinners}
+                  onClick={() => handleDrawWinners()}
                   disabled={isDrawingWinners || fhevmStatus !== 'ready'}
                   className="w-full bg-[#FB923C] text-white font-black py-4 md:py-6 rounded-lg border-4 border-[#EA580C] shadow-[4px_4px_0px_0px_rgba(234,88,12,0.8)] hover:translate-x-[4px] hover:translate-y-[4px] hover:shadow-none disabled:opacity-50 disabled:cursor-not-allowed text-base md:text-xl transition-all flex items-center justify-center gap-3"
                 >
